@@ -723,6 +723,8 @@ function updateRouteFields(){
   }
 }
 
+let lastRouteOrigin = null, lastRouteDestination = null, lastRouteTravelmode = 'transit';
+
 function renderRouteLinks(fromPin, toPin){
   const gLink = document.getElementById('google-route-link');
   const gLabel = document.getElementById('google-route-label');
@@ -732,6 +734,9 @@ function renderRouteLinks(fromPin, toPin){
   gLink.href = `https://www.google.com/maps/dir/?api=1&origin=${fromPin.lat},${fromPin.lng}&destination=${toPin.lat},${toPin.lng}&travelmode=${travelmode}`;
   gLink.removeAttribute('aria-disabled');
   gLabel.textContent = routeMode === 'walk' ? 'Open walking route in Google Maps' : 'Open transit route in Google Maps';
+  lastRouteOrigin = { lat: fromPin.lat, lng: fromPin.lng };
+  lastRouteDestination = { lat: toPin.lat, lng: toPin.lng };
+  lastRouteTravelmode = travelmode;
 
   if(routeMode === 'walk'){
     // NAVITIME's transfer search is transit-specific; not useful for a walk-only hop.
@@ -743,12 +748,45 @@ function renderRouteLinks(fromPin, toPin){
   }
 }
 
+/* ---------------- open the Google Maps app directly on mobile ----------------
+   Plain https://www.google.com/maps links are *supposed* to auto-open the
+   native app via Universal Links (iOS) / App Links (Android), but that only
+   fires when the OS/browser has that link-handling enabled, which many
+   phones don't have on by default. These schemes force it, with a web
+   fallback if the app isn't installed. */
+function isIOS(){ return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream; }
+function isAndroidDevice(){ return /Android/.test(navigator.userAgent); }
+
+document.getElementById('google-route-link').addEventListener('click', (e) => {
+  if(!lastRouteOrigin || !lastRouteDestination) return;
+  const webUrl = e.currentTarget.href;
+  const originStr = `${lastRouteOrigin.lat},${lastRouteOrigin.lng}`;
+  const destStr = `${lastRouteDestination.lat},${lastRouteDestination.lng}`;
+
+  if(isAndroidDevice()){
+    e.preventDefault();
+    const intentUrl = `intent://maps/dir/?api=1&origin=${originStr}&destination=${destStr}&travelmode=${lastRouteTravelmode}` +
+      `#Intent;scheme=https;package=com.google.android.apps.maps;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+    window.location.href = intentUrl;
+  } else if(isIOS()){
+    e.preventDefault();
+    const mode = lastRouteTravelmode === 'walking' ? 'walking' : 'transit';
+    const iosUrl = `comgooglemaps://?saddr=${originStr}&daddr=${destStr}&directionsmode=${mode}`;
+    const fallbackTimer = setTimeout(() => { window.location.href = webUrl; }, 1500);
+    window.addEventListener('pagehide', () => clearTimeout(fallbackTimer), { once: true });
+    window.location.href = iosUrl;
+  }
+  // Desktop: let the normal <a target="_blank"> behavior open the web tab.
+});
+
 function disableRouteLinks(){
   ['google-route-link', 'navitime-route-link'].forEach(id => {
     const el = document.getElementById(id);
     el.setAttribute('aria-disabled', 'true');
     el.removeAttribute('href');
   });
+  lastRouteOrigin = null;
+  lastRouteDestination = null;
 }
 
 document.getElementById('mode-transit-btn').addEventListener('click', () => {
