@@ -957,35 +957,28 @@ document.getElementById('google-route-link').addEventListener('click', (e) => {
     e.preventDefault();
     const intentUrl = `intent://maps/dir/?api=1&origin=${originStr}&destination=${destStr}&travelmode=${lastRouteTravelmode}` +
       `#Intent;scheme=https;package=com.google.android.apps.maps;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
-    // Navigate the current tab directly. A successful app hand-off just
-    // backgrounds this tab without unloading it — Chrome restores it as-is
-    // when you return. Only the fallback (app not installed) actually
-    // navigates away, via Chrome's own browser_fallback_url handling.
-    window.location.href = intentUrl;
+    // Open a fresh tab and let IT handle the app-scheme attempt + fallback,
+    // so this planner tab is never touched regardless of the outcome.
+    const newWin = window.open('', '_blank');
+    if(newWin) newWin.location.href = intentUrl;
+    else window.location.href = intentUrl; // popup blocked — only path left is in-place navigation
   } else if(isIOS()){
     e.preventDefault();
     const mode = lastRouteTravelmode === 'walking' ? 'walking' : 'transit';
     const iosUrl = `comgooglemaps://?saddr=${originStr}&daddr=${destStr}&directionsmode=${mode}`;
-    // Same principle as Android: navigate this tab directly rather than a
-    // secondary popup. WebKit only grants the "trusted user gesture" a
-    // custom-scheme hand-off needs to a DIRECT navigation on the current
-    // tab — routing it through window.open() on a new tab (the previous
-    // approach) loses that trust and defers the app-open prompt until the
-    // tab is refocused, which was the bug. If the app opens, this tab is
-    // simply backgrounded and reappears untouched when you switch back.
-    // Only fall back to the web URL if we're still visible after the
-    // timeout, meaning the app never intercepted it.
-    const fallbackTimer = setTimeout(() => {
-      if(!document.hidden) window.location.href = webUrl;
-    }, 1500);
-    const onVisibilityChange = () => {
-      if(document.hidden){
-        clearTimeout(fallbackTimer);
-        document.removeEventListener('visibilitychange', onVisibilityChange);
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    window.location.href = iosUrl;
+    const newWin = window.open('', '_blank');
+    if(newWin){
+      newWin.location.href = iosUrl;
+      // If the app doesn't intercept this (not installed), that new tab
+      // falls back to the web version on its own — this tab is untouched either way.
+      setTimeout(() => {
+        try{ if(newWin && !newWin.closed) newWin.location.href = webUrl; }catch(err){}
+      }, 1500);
+    } else {
+      // Popup blocked — only remaining option is in-place navigation.
+      window.location.href = iosUrl;
+      setTimeout(() => { window.location.href = webUrl; }, 1500);
+    }
   }
   // Desktop: default <a target="_blank"> behavior opens a new tab already, so this tab is untouched.
 });
