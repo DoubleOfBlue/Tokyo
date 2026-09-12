@@ -103,7 +103,8 @@
   #close-details-btn:hover{ border-color:var(--error); color:var(--error); }
 
   .sidebar-header{ padding:16px 18px 14px; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-  .sidebar-header h1{ font-size:16px; font-weight:700; margin:0 0 2px; letter-spacing:.01em; }
+  .sidebar-header h1{ font-size:16px; font-weight:700; margin:0 0 2px; letter-spacing:.01em; display:flex; align-items:center; gap:7px; }
+  .version-tag{ font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:500; color:var(--ink-dim); background:var(--panel-raised); border:1px solid var(--border); border-radius:3px; padding:1px 5px; letter-spacing:0; }
   .sidebar-header .sub{ font-size:11px; color:var(--ink-dim); }
 
   .app-mode-tabs{ display:flex; padding:10px 18px 0; border-bottom:1px solid var(--border); gap:0; }
@@ -121,7 +122,7 @@
   }
   #theme-toggle:hover{ border-color:var(--amber); }
 
-  .section{ padding:14px 18px; border-bottom:1px solid var(--border); }
+  .section{ padding:12px 16px; border-bottom:1px solid var(--border); }
   .section-title{ font-size:11px; color:var(--ink-dim); margin:0 0 10px; letter-spacing:.03em; display:flex; align-items:center; justify-content:space-between; }
   .section-title .clear-all{ font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink-dim); background:none; border:none; cursor:pointer; letter-spacing:0; text-decoration:underline; text-underline-offset:2px; padding:0; }
   .section-title .clear-all:hover{ color:var(--error); }
@@ -153,14 +154,15 @@
   :root[data-theme="light"] #place-details-host gmp-place-details{ color-scheme: light; }
   #place-details-caveat{ font-size:11px; color:var(--ink-dim); line-height:1.6; padding:10px 2px 4px; border-top:1px solid var(--border); margin-top:8px; }
 
+  .search-row{ display:flex; gap:8px; align-items:stretch; }
+  .search-row #search-container{ flex:1; min-width:0; }
   .pin-mode-btn{
-    width:100%; margin-top:8px; padding:8px 10px; font-size:12px; font-family:inherit;
+    flex-shrink:0; width:38px; font-size:16px; font-family:inherit;
     background:var(--panel-raised); color:var(--ink-dim); border:1px solid var(--border);
-    border-radius:var(--radius); cursor:pointer; text-align:left;
+    border-radius:var(--radius); cursor:pointer; display:flex; align-items:center; justify-content:center;
   }
   .pin-mode-btn:hover{ border-color:var(--amber); }
-  .pin-mode-btn.active{ background:var(--to-bg); border-color:var(--to-border); color:var(--to-text); }
-  .pin-mode-btn strong{ font-family:'IBM Plex Mono',monospace; }
+  .pin-mode-btn.active{ background:var(--to-bg); border-color:var(--to-border); }
   #map.pin-mode-cursor{ cursor: crosshair; }
 
   /* Custom map markers: a teardrop pin shape (anchored at its tip, the exact
@@ -249,11 +251,10 @@
   #get-route-btn:not(:disabled):hover{ filter:brightness(1.08); }
 
   .route-stat{
-    font-size:12px; color:var(--ink-dim); margin-bottom:10px; padding:8px 10px; background:var(--panel-raised);
-    border-radius:var(--radius); display:none;
+    font-size:11px; color:var(--ink-dim); margin:6px 2px 8px; display:none; font-family:'IBM Plex Mono',monospace;
   }
   .route-stat.visible{ display:block; }
-  .route-stat .big{ color:var(--ink); font-size:15px; font-family:'IBM Plex Mono',monospace; font-weight:600; }
+  .route-stat #route-distance{ color:var(--ink); font-weight:600; }
 
   .mode-toggle{ display:none; gap:6px; margin-bottom:10px; }
   .mode-toggle.visible{ display:flex; }
@@ -275,8 +276,6 @@
   .route-link.secondary:hover{ border-color:var(--amber); color:var(--amber); filter:none; }
   .route-link[aria-disabled="true"]{ opacity:.4; pointer-events:none; }
   .route-link .arrow{ font-family:'IBM Plex Mono',monospace; }
-
-  #route-note{ font-size:11px; color:var(--ink-dim); line-height:1.6; margin-top:4px; }
 
   ::-webkit-scrollbar{ width:8px; }
   ::-webkit-scrollbar-track{ background:transparent; }
@@ -314,7 +313,7 @@
   <div id="sidebar">
     <div class="sidebar-header">
       <div>
-        <h1>Tokyo Transit Planner</h1>
+        <h1>Tokyo Transit Planner <span class="version-tag" id="version-tag">v1.0.0</span></h1>
         <div class="sub" id="sidebar-sub">Search to pin, then pick a From / To for routing</div>
       </div>
       <button id="theme-toggle" title="Toggle light/dark theme">🌙</button>
@@ -325,22 +324,22 @@
       <button class="app-mode-btn" id="mode-tab-places" data-mode="places">📍 Places</button>
     </div>
 
-    <div class="section">
-      <div class="section-title"><span>SEARCH &amp; PIN</span></div>
-      <div id="search-container"></div>
-      <button id="pin-mode-btn" class="pin-mode-btn">📍 Click map to add pin: <strong>Off</strong></button>
+    <div class="section" style="padding-bottom:10px;">
+      <div class="search-row">
+        <div id="search-container"></div>
+        <button id="pin-mode-btn" title="Click map to add pin: Off">📍</button>
+      </div>
     </div>
 
-    <div class="section" style="flex:1; display:flex; flex-direction:column; overflow:hidden; padding-bottom:0;">
+    <div class="section" style="flex:1; display:flex; flex-direction:column; overflow:hidden; padding-top:0; padding-bottom:0;">
       <div class="section-title">
         <span>PINNED LOCATIONS <span class="pin-count" id="pin-count"></span></span>
         <button class="clear-all" id="clear-all-btn" style="display:none;">clear all</button>
       </div>
-      <div id="pin-list"><div class="empty-note">No pins yet. Search above, or turn on pin mode and click the map.</div></div>
+      <div id="pin-list"><div class="empty-note">No pins yet. Search above, or tap 📍 and click the map.</div></div>
     </div>
 
     <div class="section" id="navigate-route-section">
-      <div class="section-title">TRANSIT ROUTE</div>
       <div class="route-fields">
         <div class="route-field from">
           <span class="tag">FROM</span>
@@ -352,7 +351,7 @@
         </div>
       </div>
       <div class="route-stat" id="route-stat">
-        Straight-line distance: <span class="big" id="route-distance">–</span>
+        <span id="route-distance">–</span> apart
       </div>
       <div class="mode-toggle" id="mode-toggle">
         <button class="mode-btn" data-mode="transit" id="mode-transit-btn">🚊 Transit</button>
@@ -361,10 +360,6 @@
       <a class="route-link" id="google-route-link" target="_blank" rel="noopener" aria-disabled="true">
         <span id="google-route-label">Open transit route in Google Maps</span><span class="arrow">↗</span>
       </a>
-      <a class="route-link secondary" id="navitime-route-link" target="_blank" rel="noopener" aria-disabled="true">
-        <span>Try NAVITIME (Japan specialist)</span><span class="arrow">↗</span>
-      </a>
-      <div id="route-note">Links open the live route — stations and lines, or walking directions — in a new tab, using each service's own free planner. No key or account needed for these.</div>
     </div>
 
     <div class="section" id="places-hint-section" style="display:none;">
@@ -466,7 +461,7 @@ initTheme();
 function setPinMode(active){
   pinModeActive = active;
   const btn = document.getElementById('pin-mode-btn');
-  btn.innerHTML = `📍 Click map to add pin: <strong>${active ? 'On' : 'Off'}</strong>`;
+  btn.title = `Click map to add pin: ${active ? 'On' : 'Off'}`;
   btn.classList.toggle('active', active);
   const mapEl = document.getElementById('map');
   if(mapEl) mapEl.classList.toggle('pin-mode-cursor', active);
@@ -916,7 +911,6 @@ let lastRouteOrigin = null, lastRouteDestination = null, lastRouteTravelmode = '
 function renderRouteLinks(fromPin, toPin){
   const gLink = document.getElementById('google-route-link');
   const gLabel = document.getElementById('google-route-label');
-  const nLink = document.getElementById('navitime-route-link');
 
   const travelmode = routeMode === 'walk' ? 'walking' : 'transit';
   gLink.href = `https://www.google.com/maps/dir/?api=1&origin=${fromPin.lat},${fromPin.lng}&destination=${toPin.lat},${toPin.lng}&travelmode=${travelmode}`;
@@ -925,15 +919,6 @@ function renderRouteLinks(fromPin, toPin){
   lastRouteOrigin = { lat: fromPin.lat, lng: fromPin.lng };
   lastRouteDestination = { lat: toPin.lat, lng: toPin.lng };
   lastRouteTravelmode = travelmode;
-
-  if(routeMode === 'walk'){
-    // NAVITIME's transfer search is transit-specific; not useful for a walk-only hop.
-    nLink.setAttribute('aria-disabled', 'true');
-    nLink.removeAttribute('href');
-  } else {
-    nLink.href = `https://www.navitime.co.jp/transfer/searchlist?FromName=${encodeURIComponent(fromPin.name)}&FromLat=${fromPin.lat}&FromLon=${fromPin.lng}&ToName=${encodeURIComponent(toPin.name)}&ToLat=${toPin.lat}&ToLon=${toPin.lng}`;
-    nLink.removeAttribute('aria-disabled');
-  }
 }
 
 /* ---------------- open the Google Maps app directly on mobile ----------------
@@ -1001,11 +986,9 @@ document.getElementById('google-route-link').addEventListener('click', (e) => {
 });
 
 function disableRouteLinks(){
-  ['google-route-link', 'navitime-route-link'].forEach(id => {
-    const el = document.getElementById(id);
-    el.setAttribute('aria-disabled', 'true');
-    el.removeAttribute('href');
-  });
+  const el = document.getElementById('google-route-link');
+  el.setAttribute('aria-disabled', 'true');
+  el.removeAttribute('href');
   lastRouteOrigin = null;
   lastRouteDestination = null;
 }
