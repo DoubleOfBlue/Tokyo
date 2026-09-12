@@ -533,12 +533,10 @@ document.getElementById('close-details-btn').addEventListener('click', closePlac
 document.getElementById('google-search-place-link').addEventListener('click', (e) => {
   const url = e.currentTarget.dataset.searchUrl;
   if(!url) return;
-  // Triggered via window.open() from a script, rather than a native <a href>
-  // navigation, since a plain link to google.com/search risks being
-  // intercepted by the Google app's Universal Link registration on iOS —
-  // this keeps it in the current browser as a normal new tab instead.
-  const newWin = window.open(url, '_blank', 'noopener');
-  if(!newWin) window.location.href = url; // popup blocked — fall back to in-place navigation
+  // window.open() alone didn't stop the Google app's Universal Link from
+  // grabbing this — same synthetic-click technique used for the Maps
+  // button, which reliably keeps it in the current browser as a plain new tab.
+  clickToOpen(url, true);
 });
 
 function setSelectedPinRowClass(id){
