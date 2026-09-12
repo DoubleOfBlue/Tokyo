@@ -947,6 +947,23 @@ function isIOS(){
 }
 function isAndroidDevice(){ return /Android/.test(navigator.userAgent); }
 
+// Opens a URL via a synthetic click on a real, temporary <a> element rather
+// than window.open()/location assignment — mobile Safari treats a genuine
+// anchor click far more consistently, both for custom-scheme app hand-offs
+// (comgooglemaps://, intent://) and for guaranteeing an actual new tab
+// rather than the current one being silently reused.
+function clickToOpen(url, newTab){
+  const a = document.createElement('a');
+  a.href = url;
+  if(newTab){ a.target = '_blank'; a.rel = 'noopener'; }
+  a.style.position = 'fixed';
+  a.style.opacity = '0';
+  a.style.pointerEvents = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => a.remove(), 0);
+}
+
 document.getElementById('google-route-link').addEventListener('click', (e) => {
   if(!lastRouteOrigin || !lastRouteDestination) return;
   const webUrl = e.currentTarget.href;
@@ -957,28 +974,22 @@ document.getElementById('google-route-link').addEventListener('click', (e) => {
     e.preventDefault();
     const intentUrl = `intent://maps/dir/?api=1&origin=${originStr}&destination=${destStr}&travelmode=${lastRouteTravelmode}` +
       `#Intent;scheme=https;package=com.google.android.apps.maps;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
-    // Open a fresh tab and let IT handle the app-scheme attempt + fallback,
-    // so this planner tab is never touched regardless of the outcome.
-    const newWin = window.open('', '_blank');
-    if(newWin) newWin.location.href = intentUrl;
-    else window.location.href = intentUrl; // popup blocked — only path left is in-place navigation
+    // intent:// is a real navigable URL Chrome intercepts itself — safe to
+    // send straight to a new tab; this planner tab is untouched either way.
+    clickToOpen(intentUrl, true);
   } else if(isIOS()){
     e.preventDefault();
     const mode = lastRouteTravelmode === 'walking' ? 'walking' : 'transit';
     const iosUrl = `comgooglemaps://?saddr=${originStr}&daddr=${destStr}&directionsmode=${mode}`;
-    const newWin = window.open('', '_blank');
-    if(newWin){
-      newWin.location.href = iosUrl;
-      // If the app doesn't intercept this (not installed), that new tab
-      // falls back to the web version on its own — this tab is untouched either way.
-      setTimeout(() => {
-        try{ if(newWin && !newWin.closed) newWin.location.href = webUrl; }catch(err){}
-      }, 1500);
-    } else {
-      // Popup blocked — only remaining option is in-place navigation.
-      window.location.href = iosUrl;
-      setTimeout(() => { window.location.href = webUrl; }, 1500);
-    }
+    // Custom schemes aren't real page loads, so this doesn't open or
+    // navigate any tab — it's purely an OS-level app hand-off attempt.
+    clickToOpen(iosUrl, false);
+    // Only if the app didn't intercept it (we're still visible after the
+    // timeout) do we open the web fallback — and even then, in a fresh
+    // tab via the same synthetic-click technique, so this tab stays put.
+    setTimeout(() => {
+      if(!document.hidden) clickToOpen(webUrl, true);
+    }, 1200);
   }
   // Desktop: default <a target="_blank"> behavior opens a new tab already, so this tab is untouched.
 });
