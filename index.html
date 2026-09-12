@@ -369,6 +369,9 @@
       <span>PLACE DETAILS</span>
       <button id="close-details-btn" title="Close">×</button>
     </div>
+    <a id="google-search-place-link" class="route-link secondary" target="_blank" rel="noopener" style="display:none; margin-bottom:12px;">
+      <span>🔍 Search this place on Google</span><span class="arrow">↗</span>
+    </a>
     <div id="place-details-empty" class="empty-note">Click a pin on the map, or a place's name in the list, to see its details here.</div>
     <div id="place-details-host" style="display:none;">
       <gmp-place-details>
@@ -493,6 +496,11 @@ function showPlaceDetails(pin){
   selectedDetailsPinId = pin.id;
   document.getElementById('details-side-panel').classList.add('visible');
 
+  const searchLink = document.getElementById('google-search-place-link');
+  const query = pin.name + (pin.address ? ' ' + pin.address : '');
+  searchLink.href = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  searchLink.style.display = 'flex';
+
   if(!pin.placeId){
     emptyEl.textContent = "This pin isn't linked to a Google Place (it was dropped manually), so detailed info isn't available for it. Pins added via search have full details.";
     emptyEl.style.display = 'block';
@@ -515,6 +523,7 @@ function closePlaceDetails(){
   emptyEl.textContent = "Click a pin on the map, or a place's name in the list, to see its details here.";
   emptyEl.style.display = 'block';
   document.getElementById('place-details-host').style.display = 'none';
+  document.getElementById('google-search-place-link').style.display = 'none';
   document.getElementById('details-side-panel').classList.remove('visible');
   updateMarkerSelectionRing();
   setSelectedPinRowClass(null);
@@ -916,7 +925,15 @@ function renderRouteLinks(fromPin, toPin){
    fires when the OS/browser has that link-handling enabled, which many
    phones don't have on by default. These schemes force it, with a web
    fallback if the app isn't installed. */
-function isIOS(){ return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream; }
+function isIOS(){
+  // iPadOS 13+ Safari reports a desktop "Macintosh" user agent by default —
+  // no "iPad" substring at all — which caused this check to misdetect
+  // iPads as desktop and skip straight to the plain web link. Multi-touch
+  // support is the reliable way to tell a real Mac apart from an iPad here.
+  if(/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) return true;
+  if(navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
+  return false;
+}
 function isAndroidDevice(){ return /Android/.test(navigator.userAgent); }
 
 document.getElementById('google-route-link').addEventListener('click', (e) => {
