@@ -369,9 +369,9 @@
       <span>PLACE DETAILS</span>
       <button id="close-details-btn" title="Close">×</button>
     </div>
-    <a id="google-search-place-link" class="route-link secondary" target="_blank" rel="noopener" style="display:none; margin-bottom:12px;">
+    <button id="google-search-place-link" class="route-link secondary" style="display:none; margin-bottom:12px; width:100%;">
       <span>🔍 Search this place on Google</span><span class="arrow">↗</span>
-    </a>
+    </button>
     <div id="place-details-empty" class="empty-note">Click a pin on the map, or a place's name in the list, to see its details here.</div>
     <div id="place-details-host" style="display:none;">
       <gmp-place-details>
@@ -498,7 +498,7 @@ function showPlaceDetails(pin){
 
   const searchLink = document.getElementById('google-search-place-link');
   const query = pin.name + (pin.address ? ' ' + pin.address : '');
-  searchLink.href = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  searchLink.dataset.searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
   searchLink.style.display = 'flex';
 
   if(!pin.placeId){
@@ -529,6 +529,17 @@ function closePlaceDetails(){
   setSelectedPinRowClass(null);
 }
 document.getElementById('close-details-btn').addEventListener('click', closePlaceDetails);
+
+document.getElementById('google-search-place-link').addEventListener('click', (e) => {
+  const url = e.currentTarget.dataset.searchUrl;
+  if(!url) return;
+  // Triggered via window.open() from a script, rather than a native <a href>
+  // navigation, since a plain link to google.com/search risks being
+  // intercepted by the Google app's Universal Link registration on iOS —
+  // this keeps it in the current browser as a normal new tab instead.
+  const newWin = window.open(url, '_blank', 'noopener');
+  if(!newWin) window.location.href = url; // popup blocked — fall back to in-place navigation
+});
 
 function setSelectedPinRowClass(id){
   document.querySelectorAll('.pin-item').forEach(el => {
@@ -946,23 +957,35 @@ document.getElementById('google-route-link').addEventListener('click', (e) => {
     e.preventDefault();
     const intentUrl = `intent://maps/dir/?api=1&origin=${originStr}&destination=${destStr}&travelmode=${lastRouteTravelmode}` +
       `#Intent;scheme=https;package=com.google.android.apps.maps;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
-    // Open a separate tab for the hand-off so this planner tab is never navigated away from.
-    const newWin = window.open('', '_blank');
-    if(newWin) newWin.location.href = intentUrl;
-    else window.location.href = intentUrl; // popup blocked — fall back to in-place navigation
+    // Navigate the current tab directly. A successful app hand-off just
+    // backgrounds this tab without unloading it — Chrome restores it as-is
+    // when you return. Only the fallback (app not installed) actually
+    // navigates away, via Chrome's own browser_fallback_url handling.
+    window.location.href = intentUrl;
   } else if(isIOS()){
     e.preventDefault();
     const mode = lastRouteTravelmode === 'walking' ? 'walking' : 'transit';
     const iosUrl = `comgooglemaps://?saddr=${originStr}&daddr=${destStr}&directionsmode=${mode}`;
-    const newWin = window.open('', '_blank');
-    if(newWin){
-      newWin.location.href = iosUrl;
-      // If the app didn't intercept this (not installed), the new tab falls back to the web version — this tab stays put either way.
-      setTimeout(() => { try{ newWin.location.href = webUrl; }catch(err){} }, 1500);
-    } else {
-      window.location.href = iosUrl;
-      setTimeout(() => { window.location.href = webUrl; }, 1500);
-    }
+    // Same principle as Android: navigate this tab directly rather than a
+    // secondary popup. WebKit only grants the "trusted user gesture" a
+    // custom-scheme hand-off needs to a DIRECT navigation on the current
+    // tab — routing it through window.open() on a new tab (the previous
+    // approach) loses that trust and defers the app-open prompt until the
+    // tab is refocused, which was the bug. If the app opens, this tab is
+    // simply backgrounded and reappears untouched when you switch back.
+    // Only fall back to the web URL if we're still visible after the
+    // timeout, meaning the app never intercepted it.
+    const fallbackTimer = setTimeout(() => {
+      if(!document.hidden) window.location.href = webUrl;
+    }, 1500);
+    const onVisibilityChange = () => {
+      if(document.hidden){
+        clearTimeout(fallbackTimer);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.location.href = iosUrl;
   }
   // Desktop: default <a target="_blank"> behavior opens a new tab already, so this tab is untouched.
 });
