@@ -225,9 +225,19 @@
     25%, 75% { background:var(--to-bg); border-color:var(--to-border); }
   }
   .pin-item.flash{ animation: pin-flash 1.2s ease-in-out; }
+  .drag-handle{ cursor:grab; color:var(--ink-dim); font-size:12px; padding-top:4px; user-select:none; flex-shrink:0; }
+  .drag-handle:hover{ color:var(--ink); }
+  .pin-item.dragging{ opacity:.4; }
+  .pin-item.drag-over{ border-color:var(--amber); background:var(--amber-dim); }
   .pin-dot{ width:9px; height:9px; border-radius:50%; margin-top:5px; flex-shrink:0; }
   .pin-info{ flex:1; min-width:0; }
-  .pin-name{ font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pin-name-row{ display:flex; align-items:center; gap:4px; }
+  .pin-name{ font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+  .pin-edit-btn{
+    flex-shrink:0; background:none; border:none; cursor:pointer; font-size:11px; padding:2px 3px;
+    opacity:.5; border-radius:var(--radius);
+  }
+  .pin-edit-btn:hover{ opacity:1; background:var(--panel-raised); }
   .mode-places .pin-name{ cursor:pointer; }
   .mode-places .pin-name:hover{ color:var(--amber); text-decoration:underline; }
   .mode-places .pin-actions{ display:none; }
@@ -242,6 +252,30 @@
   .pin-btn.active-from{ background:var(--from-bg); border-color:var(--from-border); color:var(--from-text); }
   .pin-btn.active-to{ background:var(--to-bg); border-color:var(--to-border); color:var(--to-text); }
   .pin-btn.from-here{ margin-left:auto; }
+
+  .pin-edit-panel{
+    margin-top:9px; padding:10px; background:var(--panel-raised); border:1px solid var(--border);
+    border-radius:var(--radius); animation: fade-in-up .2s ease;
+  }
+  .edit-row-label{ font-size:10px; color:var(--ink-dim); letter-spacing:.03em; margin:9px 0 5px; }
+  .edit-row-label:first-child{ margin-top:0; }
+  .rename-input{
+    width:100%; background:var(--panel); border:1px solid var(--border); color:var(--ink);
+    padding:6px 8px; border-radius:var(--radius); font-size:12px; font-family:inherit;
+  }
+  .rename-input:focus{ outline:none; border-color:var(--amber); }
+  .color-swatches{ display:flex; gap:6px; flex-wrap:wrap; }
+  .swatch{
+    width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
+    box-sizing:border-box;
+  }
+  .swatch.selected{ border-color:var(--ink); box-shadow:0 0 0 2px var(--panel-raised); }
+  .icon-presets{ display:flex; gap:5px; flex-wrap:wrap; }
+  .icon-preset{
+    width:26px; height:26px; border-radius:var(--radius); border:1px solid var(--border); background:var(--panel);
+    cursor:pointer; font-size:13px; display:flex; align-items:center; justify-content:center; padding:0; color:var(--ink-dim);
+  }
+  .icon-preset.selected{ border-color:var(--amber); background:var(--amber-dim); color:var(--ink); }
   .pin-remove{ background:none; border:none; color:var(--ink-dim); cursor:pointer; font-size:15px; padding:2px 6px; flex-shrink:0; border-radius:var(--radius); line-height:1; }
   .pin-remove:hover{ color:var(--error); background:var(--panel-raised); }
   .empty-note{ color:var(--ink-dim); font-size:12px; padding:16px 10px; line-height:1.6; border:1px dashed var(--border); border-radius:var(--radius); margin:4px; text-align:center; }
@@ -337,7 +371,7 @@
   <div id="sidebar">
     <div class="sidebar-header">
       <div>
-        <h1>Tokyo Transit Planner <span class="version-tag" id="version-tag">v1.1.0</span></h1>
+        <h1>Tokyo Transit Planner <span class="version-tag" id="version-tag">v1.2.0</span></h1>
         <div class="sub" id="sidebar-sub">Search to pin, then pick a From / To for routing</div>
       </div>
       <button id="theme-toggle" title="Toggle light/dark theme">🌙</button>
@@ -456,9 +490,12 @@ function findPinById(id){
   return pins.find(p => p.id === id) || null;
 }
 const DOT_COLORS = ['#e6b94d','#7bc142','#e2574c','#4d9fe6','#c17be6','#e68a4d'];
+const ICON_PRESETS = ['', '🍜', '☕', '🍣', '🏨', '⛩️', '🛍️', '🎡', '🌳', '🚉'];
+let editingPinId = null;   // pin currently showing its edit panel in the list
+let dragSourcePinId = null;
 const TOKYO_CENTER = { lat: 35.6812, lng: 139.7671 };
 
-function colorForPin(id){ const idx = pins.findIndex(p => p.id === id); return DOT_COLORS[idx % DOT_COLORS.length]; }
+
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ---------------- theme ---------------- */
@@ -710,6 +747,8 @@ async function initApp(){
 /* ---------------- pins ---------------- */
 function addPin(p){
   if(pins.find(x => x.id === p.id)) return;
+  if(!p.color) p.color = DOT_COLORS[pins.length % DOT_COLORS.length];
+  if(p.icon === undefined) p.icon = null;
   pins.push(p);
   placeMarker(p);
   renderPinList();
@@ -718,18 +757,26 @@ function addPin(p){
   if(map.getZoom() < 14) map.setZoom(15);
 }
 
-function placeMarker(p){
-  const wrap = document.createElement('div');
-  wrap.className = 'map-pin';
-  const color = colorForPin(p.id);
-  wrap.innerHTML = `
+function buildPinContentHtml(pin){
+  const color = pin.color || '#e6b94d';
+  const iconGlyph = pin.icon
+    ? `<text x="13" y="13.5" text-anchor="middle" dominant-baseline="central" font-size="9">${escapeHtml(pin.icon)}</text>`
+    : '';
+  return `
     <svg viewBox="0 0 26 35" xmlns="http://www.w3.org/2000/svg">
       <path d="M13 0C5.8 0 0 5.8 0 13c0 9.7 13 22 13 22s13-12.3 13-22C26 5.8 20.2 0 13 0z"
             style="fill:${color}; stroke:var(--bg); stroke-width:1.5;"></path>
       <circle cx="13" cy="13" r="5.5" style="fill:var(--bg);"></circle>
+      ${iconGlyph}
     </svg>
-    <div class="map-pin-label">${escapeHtml(p.name)}</div>
+    <div class="map-pin-label">${escapeHtml(pin.name)}</div>
   `;
+}
+
+function placeMarker(p){
+  const wrap = document.createElement('div');
+  wrap.className = 'map-pin';
+  wrap.innerHTML = buildPinContentHtml(p);
   const marker = new AdvancedMarkerElement({
     map, position: { lat: p.lat, lng: p.lng }, content: wrap, title: p.name, gmpClickable: true,
   });
@@ -738,6 +785,13 @@ function placeMarker(p){
     else highlightPinInList(p.id);
   });
   markers[p.id] = marker;
+}
+
+function refreshMarkerContent(pin){
+  const marker = markers[pin.id];
+  if(!marker || !marker.content) return;
+  marker.content.innerHTML = buildPinContentHtml(pin);
+  marker.title = pin.name;
 }
 
 function highlightPinInList(id){
@@ -766,6 +820,7 @@ function removePin(id){
   if(fromId === id) fromId = null;
   if(toId === id) toId = null;
   if(selectedDetailsPinId === id) closePlaceDetails();
+  if(editingPinId === id) editingPinId = null;
   renderPinList();
   updateRouteFields();
   storeSet('tokyo-pins', pins);
@@ -867,19 +922,26 @@ function renderPinList(){
     const item = document.createElement('div');
     item.className = 'pin-item';
     item.setAttribute('data-pin-id', p.id);
+    item.draggable = true;
     item.innerHTML = `
-      <div class="pin-dot" style="background:${colorForPin(p.id)}"></div>
+      <span class="drag-handle" title="Drag to reorder">⠿</span>
+      <div class="pin-dot" style="background:${p.color}"></div>
       <div class="pin-info">
-        <div class="pin-name" data-act="view-details" data-id="${p.id}">${escapeHtml(p.name)}</div>
+        <div class="pin-name-row">
+          <div class="pin-name" data-act="view-details" data-id="${p.id}">${escapeHtml(p.name)}</div>
+          <button class="pin-edit-btn" data-act="edit" data-id="${p.id}" title="Edit pin">✏️</button>
+        </div>
         <div class="pin-addr">${escapeHtml(p.address || '')}</div>
         <div class="pin-actions">
           <button class="pin-btn ${fromId===p.id?'active-from':''}" data-act="from" data-id="${p.id}">${fromId===p.id?'✓ FROM':'SET FROM'}</button>
           <button class="pin-btn ${toId===p.id?'active-to':''}" data-act="to" data-id="${p.id}">${toId===p.id?'✓ TO':'SET TO'}</button>
           <button class="pin-btn from-here" data-act="from-here" data-id="${p.id}" title="Route here from your current location">📍 From here</button>
         </div>
+        ${editingPinId === p.id ? buildEditPanelHtml(p) : ''}
       </div>
       <button class="pin-remove" data-act="remove" data-id="${p.id}">×</button>
     `;
+    attachDragHandlers(item, p.id);
     list.appendChild(item);
   });
   list.querySelectorAll('[data-act]').forEach(btn => {
@@ -891,9 +953,87 @@ function renderPinList(){
       else if(act === 'remove') removePin(id);
       else if(act === 'from-here') useCurrentLocationAsFrom(id, btn);
       else if(act === 'view-details'){ if(appMode === 'places') togglePlaceDetails(findPinById(id)); }
+      else if(act === 'edit'){ editingPinId = (editingPinId === id) ? null : id; renderPinList(); }
+      else if(act === 'close-edit'){ editingPinId = null; renderPinList(); }
+      else if(act === 'set-color'){
+        const pin = findPinById(id);
+        if(pin){ pin.color = btn.getAttribute('data-color'); refreshMarkerContent(pin); storeSet('tokyo-pins', pins); renderPinList(); }
+      } else if(act === 'set-icon'){
+        const pin = findPinById(id);
+        if(pin){ pin.icon = btn.getAttribute('data-icon') || null; refreshMarkerContent(pin); storeSet('tokyo-pins', pins); renderPinList(); }
+      }
+    });
+  });
+  list.querySelectorAll('.rename-input').forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter'){ e.preventDefault(); input.blur(); }
+    });
+    input.addEventListener('blur', () => {
+      const id = input.getAttribute('data-id');
+      const pin = findPinById(id);
+      const newName = input.value.trim();
+      if(pin && newName && newName !== pin.name){
+        pin.name = newName;
+        refreshMarkerContent(pin);
+        storeSet('tokyo-pins', pins);
+        renderPinList();
+      }
     });
   });
   setSelectedPinRowClass(selectedDetailsPinId);
+}
+
+function buildEditPanelHtml(p){
+  return `
+    <div class="pin-edit-panel">
+      <div class="edit-row-label">Rename</div>
+      <input type="text" class="rename-input" data-id="${p.id}" value="${escapeHtml(p.name)}">
+      <div class="edit-row-label">Color</div>
+      <div class="color-swatches">
+        ${DOT_COLORS.map(c => `<button class="swatch ${p.color===c?'selected':''}" data-act="set-color" data-id="${p.id}" data-color="${c}" style="background:${c}"></button>`).join('')}
+      </div>
+      <div class="edit-row-label">Icon</div>
+      <div class="icon-presets">
+        ${ICON_PRESETS.map(ic => `<button class="icon-preset ${(p.icon||'')===ic?'selected':''}" data-act="set-icon" data-id="${p.id}" data-icon="${ic}">${ic || '∅'}</button>`).join('')}
+      </div>
+      <button class="pin-btn" data-act="close-edit" style="margin-top:10px; width:100%;">Done</button>
+    </div>
+  `;
+}
+
+function attachDragHandlers(item, pinId){
+  item.addEventListener('dragstart', (e) => {
+    dragSourcePinId = pinId;
+    item.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try{ e.dataTransfer.setData('text/plain', pinId); }catch(err){}
+  });
+  item.addEventListener('dragend', () => {
+    item.classList.remove('dragging');
+    dragSourcePinId = null;
+    document.querySelectorAll('.pin-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+  });
+  item.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if(dragSourcePinId && dragSourcePinId !== pinId) item.classList.add('drag-over');
+  });
+  item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+  item.addEventListener('drop', (e) => {
+    e.preventDefault();
+    item.classList.remove('drag-over');
+    if(!dragSourcePinId || dragSourcePinId === pinId) return;
+    reorderPins(dragSourcePinId, pinId);
+  });
+}
+
+function reorderPins(sourceId, targetId){
+  const fromIdx = pins.findIndex(p => p.id === sourceId);
+  const toIdx = pins.findIndex(p => p.id === targetId);
+  if(fromIdx === -1 || toIdx === -1) return;
+  const [moved] = pins.splice(fromIdx, 1);
+  pins.splice(toIdx, 0, moved);
+  storeSet('tokyo-pins', pins);
+  renderPinList();
 }
 
 function updateRouteFields(){
