@@ -1,6 +1,7 @@
 // Injects build-time environment variables into index.html, replacing their
-// %%PLACEHOLDER%% tokens. Output goes to dist/index.html, which Vercel
-// serves as the static site.
+// %%PLACEHOLDER%% tokens. Output goes to public/index.html — "public" is
+// Vercel's zero-config default output directory, so no extra project
+// settings or vercel.json outputDirectory value are needed.
 //
 // If an env var isn't set, its placeholder is left as-is on purpose rather
 // than failing the build:
@@ -12,7 +13,7 @@ const fs = require('fs');
 const path = require('path');
 
 const SRC = path.join(__dirname, 'index.html');
-const OUT_DIR = path.join(__dirname, 'dist');
+const OUT_DIR = path.join(__dirname, 'public');
 const OUT = path.join(OUT_DIR, 'index.html');
 
 const REPLACEMENTS = [
