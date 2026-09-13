@@ -48,7 +48,9 @@
   html,body{height:100%;margin:0;}
   body{ font-family:'Zen Kaku Gothic New', sans-serif; background:var(--bg); color:var(--ink); overflow:hidden; transition:background .18s ease, color .18s ease; }
   .mono{font-family:'IBM Plex Mono', monospace;}
-  button, a, input{ transition: background .15s ease, color .15s ease, border-color .15s ease, opacity .15s ease; }
+  button, a, input{ transition: background .15s ease, color .15s ease, border-color .15s ease, opacity .15s ease, transform .1s ease; }
+  button:active{ transform: scale(0.96); }
+  .route-link:not([aria-disabled="true"]):active{ transform: scale(0.97); }
   button:focus-visible, a:focus-visible, input:focus-visible{ outline:2px solid var(--amber); outline-offset:2px; }
 
   /* ---------- Setup gate ---------- */
@@ -84,11 +86,15 @@
   #map.dark-filter{ filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9) saturate(0.9); }
 
   #details-side-panel{
-    width:420px; min-width:420px; height:100%; background:var(--panel);
-    border-left:1px solid var(--border); display:none; flex-direction:column;
-    overflow-y:auto; padding:16px 20px;
+    width:0; min-width:0; height:100%; background:var(--panel);
+    border-left:1px solid transparent; display:flex; flex-direction:column;
+    overflow-x:hidden; overflow-y:auto; padding:16px 0;
+    opacity:0;
+    transition: width .28s ease, padding .28s ease, opacity .2s ease, border-color .28s ease;
   }
-  #details-side-panel.visible{ display:flex; }
+  #details-side-panel.visible{
+    width:420px; min-width:420px; border-left-color:var(--border); padding:16px 20px; opacity:1;
+  }
   .details-panel-header{
     display:flex; align-items:center; justify-content:space-between;
     font-size:12px; color:var(--ink-dim); letter-spacing:.03em; margin-bottom:12px;
@@ -160,6 +166,7 @@
     flex-shrink:0; width:38px; font-size:16px; font-family:inherit;
     background:var(--panel-raised); color:var(--ink-dim); border:1px solid var(--border);
     border-radius:var(--radius); cursor:pointer; display:flex; align-items:center; justify-content:center;
+    -webkit-appearance:none; appearance:none;
   }
   .pin-mode-btn:hover{ border-color:var(--amber); }
   .pin-mode-btn.active{ background:var(--to-bg); border-color:var(--to-border); }
@@ -169,6 +176,13 @@
      coordinate) + a floating name label beside it. */
   .map-pin{
     position:relative; width:26px; height:35px; --pin-glow: none;
+    transform-origin: bottom center;
+    animation: pin-drop .35s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes pin-drop{
+    0% { transform: scale(0) translateY(-10px); opacity:0; }
+    60% { transform: scale(1.15) translateY(0); opacity:1; }
+    100% { transform: scale(1) translateY(0); }
   }
   .map-pin svg{ display:block; width:26px; height:35px; }
   #map:not(.dark-filter) .map-pin{ filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)) var(--pin-glow); }
@@ -253,11 +267,15 @@
   .route-stat{
     font-size:11px; color:var(--ink-dim); margin:6px 2px 8px; display:none; font-family:'IBM Plex Mono',monospace;
   }
-  .route-stat.visible{ display:block; }
+  @keyframes fade-in-up{
+    from { opacity:0; transform:translateY(6px); }
+    to { opacity:1; transform:translateY(0); }
+  }
+  .route-stat.visible{ display:block; animation: fade-in-up .25s ease; }
   .route-stat #route-distance{ color:var(--ink); font-weight:600; }
 
   .mode-toggle{ display:none; gap:6px; margin-bottom:10px; }
-  .mode-toggle.visible{ display:flex; }
+  .mode-toggle.visible{ display:flex; animation: fade-in-up .25s ease .05s backwards; }
   .mode-btn{
     flex:1; padding:7px 6px; font-size:12px; font-family:inherit; font-weight:500;
     border:1px solid var(--border); background:var(--panel-raised); color:var(--ink-dim);
@@ -288,6 +306,12 @@
     #details-side-panel{
       position:fixed; inset:0; width:100%; min-width:0; height:100%;
       z-index:60; border-left:none; padding:16px;
+      opacity:1; transform:translateY(100%);
+      transition: transform .25s ease;
+    }
+    #details-side-panel.visible{
+      width:100%; min-width:0; padding:16px; border-left:none;
+      transform:translateY(0);
     }
   }
 </style>
@@ -313,7 +337,7 @@
   <div id="sidebar">
     <div class="sidebar-header">
       <div>
-        <h1>Tokyo Transit Planner <span class="version-tag" id="version-tag">v1.0.0</span></h1>
+        <h1>Tokyo Transit Planner <span class="version-tag" id="version-tag">v1.1.0</span></h1>
         <div class="sub" id="sidebar-sub">Search to pin, then pick a From / To for routing</div>
       </div>
       <button id="theme-toggle" title="Toggle light/dark theme">🌙</button>
@@ -327,7 +351,7 @@
     <div class="section" style="padding-bottom:10px;">
       <div class="search-row">
         <div id="search-container"></div>
-        <button id="pin-mode-btn" title="Click map to add pin: Off">📍</button>
+        <button id="pin-mode-btn" class="pin-mode-btn" title="Click map to add pin: Off">📍</button>
       </div>
     </div>
 
@@ -453,6 +477,9 @@ document.getElementById('theme-toggle').addEventListener('click', async () => {
   const next = current === 'dark' ? 'light' : 'dark';
   applyTheme(next);
   await storeSet('theme', next);
+  // Redraw the connector line so its color matches the new theme's amber.
+  const fromPin = findPinById(fromId), toPin = findPinById(toId);
+  if(fromPin && toPin) updateConnectorLine(fromPin, toPin);
 });
 initTheme();
 
@@ -899,11 +926,33 @@ function updateRouteFields(){
     document.getElementById('mode-walk-btn').classList.toggle('active', routeMode === 'walk');
 
     renderRouteLinks(fromPin, toPin);
+    updateConnectorLine(fromPin, toPin);
   } else {
     statBox.classList.remove('visible');
     modeToggle.classList.remove('visible');
     disableRouteLinks();
+    updateConnectorLine(null, null);
   }
+}
+
+let connectorLine = null;
+
+function updateConnectorLine(fromPin, toPin){
+  if(connectorLine){ connectorLine.setMap(null); connectorLine = null; }
+  if(!fromPin || !toPin || !map) return;
+  const amberColor = getComputedStyle(document.documentElement).getPropertyValue('--amber').trim() || '#e6b94d';
+  connectorLine = new google.maps.Polyline({
+    path: [{ lat: fromPin.lat, lng: fromPin.lng }, { lat: toPin.lat, lng: toPin.lng }],
+    geodesic: true,
+    strokeOpacity: 0,
+    icons: [{
+      icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.9, scale: 3, strokeColor: amberColor },
+      offset: '0',
+      repeat: '12px',
+    }],
+    map: map,
+    zIndex: 5,
+  });
 }
 
 let lastRouteOrigin = null, lastRouteDestination = null, lastRouteTravelmode = 'transit';
