@@ -1,11 +1,12 @@
-// Injects GOOGLE_MAPS_API_KEY (set as a Vercel environment variable) into
-// index.html at build time, replacing the %%GOOGLE_MAPS_API_KEY%% placeholder.
-// Output goes to dist/index.html, which Vercel serves as the static site.
+// Injects build-time environment variables into index.html, replacing their
+// %%PLACEHOLDER%% tokens. Output goes to dist/index.html, which Vercel
+// serves as the static site.
 //
-// If the env var isn't set, the placeholder is left as-is on purpose rather
-// than failing the build — the app itself falls back to asking for a key
-// manually in that case, so a missing env var degrades gracefully instead
-// of breaking the deploy.
+// If an env var isn't set, its placeholder is left as-is on purpose rather
+// than failing the build:
+//  - GOOGLE_MAPS_API_KEY missing  -> app falls back to asking for a key manually
+//  - TRIP_PASSCODE missing        -> app skips the passcode gate entirely (no lock)
+// Both degrade gracefully instead of breaking the deploy.
 
 const fs = require('fs');
 const path = require('path');
@@ -13,23 +14,23 @@ const path = require('path');
 const SRC = path.join(__dirname, 'index.html');
 const OUT_DIR = path.join(__dirname, 'dist');
 const OUT = path.join(OUT_DIR, 'index.html');
-const PLACEHOLDER = '%%GOOGLE_MAPS_API_KEY%%';
 
-const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-
-if (!apiKey) {
-  console.warn(
-    '\n[build.js] WARNING: GOOGLE_MAPS_API_KEY is not set.\n' +
-    '  The deployed site will fall back to asking visitors to paste in\n' +
-    '  their own key manually. Set it in Vercel under Project Settings\n' +
-    '  -> Environment Variables if you want it pre-configured instead.\n'
-  );
-}
+const REPLACEMENTS = [
+  { envVar: 'GOOGLE_MAPS_API_KEY', placeholder: '%%GOOGLE_MAPS_API_KEY%%' },
+  { envVar: 'TRIP_PASSCODE', placeholder: '%%TRIP_PASSCODE%%' },
+];
 
 let html = fs.readFileSync(SRC, 'utf8');
+const injectedLabels = [];
 
-if (apiKey) {
-  html = html.split(PLACEHOLDER).join(apiKey);
+for (const { envVar, placeholder } of REPLACEMENTS) {
+  const value = process.env[envVar];
+  if (value) {
+    html = html.split(placeholder).join(value);
+    injectedLabels.push(envVar);
+  } else {
+    console.warn(`[build.js] WARNING: ${envVar} is not set — leaving its placeholder in place.`);
+  }
 }
 
 if (!fs.existsSync(OUT_DIR)) {
@@ -37,4 +38,7 @@ if (!fs.existsSync(OUT_DIR)) {
 }
 
 fs.writeFileSync(OUT, html, 'utf8');
-console.log('[build.js] Wrote', OUT, apiKey ? '(with API key injected)' : '(no key — manual entry fallback)');
+console.log(
+  '[build.js] Wrote', OUT,
+  injectedLabels.length ? `(injected: ${injectedLabels.join(', ')})` : '(no env vars injected)'
+);
