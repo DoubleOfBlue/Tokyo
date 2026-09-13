@@ -65,11 +65,11 @@
   .setup-card h1{ font-size:22px; margin:0 0 6px; font-weight:700; }
   .setup-card .sub{ color:var(--ink-dim); font-size:14px; margin:0 0 24px; line-height:1.6; }
   .setup-card label{ display:block; font-size:12px; letter-spacing:.02em; color:var(--ink-dim); margin-bottom:6px; }
-  .setup-card input[type=text]{
+  .setup-card input[type=text], .setup-card input[type=password]{
     width:100%; background:var(--panel-raised); border:1px solid var(--border); color:var(--ink);
     padding:10px 12px; border-radius:var(--radius); font-family:'IBM Plex Mono',monospace; font-size:13px; margin-bottom:14px;
   }
-  .setup-card input[type=text]:focus{outline:none; border-color:var(--amber);}
+  .setup-card input[type=text]:focus, .setup-card input[type=password]:focus{outline:none; border-color:var(--amber);}
   .setup-card button{
     width:100%; background:var(--amber); color:#1a1400; border:none; padding:11px;
     font-weight:700; font-size:14px; border-radius:var(--radius); cursor:pointer; font-family:inherit;
@@ -359,10 +359,56 @@
   ::-webkit-scrollbar-track{ background:transparent; }
   ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
 
+  #sheet-handle{ display:none; }
+
   @media (max-width: 720px){
-    #app.visible{ flex-direction:column; }
-    #sidebar{ width:100%; min-width:0; height:50%; border-right:none; border-bottom:1px solid var(--border); }
-    #map-wrap{ height:50%; }
+    #app.visible{ position:relative; display:block; height:100%; }
+    #map-wrap{ position:absolute; inset:0; height:100%; }
+
+    /* Bottom sheet: replaces the desktop side-by-side layout with a
+       drag-to-resize panel over the map, the standard mobile-maps pattern
+       (Google/Apple Maps). Three snap states — peek/half/full — driven by
+       JS below. transform-only for smooth, GPU-accelerated dragging. */
+    #sidebar{
+      position:absolute; left:0; right:0; bottom:0; top:auto;
+      width:100%; min-width:0; height:100vh; height:100dvh;
+      border-right:none; border-top:1px solid var(--border);
+      border-radius:16px 16px 0 0; box-shadow:0 -6px 24px rgba(0,0,0,.35);
+      z-index:20; overflow:hidden;
+      transform: translateY(calc(100% - 168px));
+      transition: transform .32s cubic-bezier(.32,.72,0,1);
+    }
+    #sidebar.dragging{ transition:none; }
+    #sidebar.sheet-half{ transform: translateY(calc(100% - 50vh)); transform: translateY(calc(100% - 50dvh)); }
+    #sidebar.sheet-full{ transform: translateY(calc(100% - 92vh)); transform: translateY(calc(100% - 92dvh)); }
+
+    #sheet-handle{
+      display:flex; align-items:center; justify-content:center; height:22px; flex-shrink:0;
+      cursor:grab; touch-action:none;
+    }
+    #sheet-handle span{ width:36px; height:4px; border-radius:2px; background:var(--border); }
+    #sidebar.dragging #sheet-handle{ cursor:grabbing; }
+
+    .sidebar-header{ padding:2px 16px 10px; }
+    .app-mode-tabs{ flex-shrink:0; }
+    #pin-list{ -webkit-overflow-scrolling:touch; }
+
+    /* Bigger touch targets throughout — 44px is the standard comfortable
+       minimum tap size on mobile. */
+    .pin-mode-btn{ width:46px; font-size:19px; }
+    #theme-toggle{ width:38px; height:38px; font-size:16px; }
+    .pin-btn{ padding:7px 11px; font-size:11px; }
+    .pin-remove{ font-size:19px; padding:6px 10px; }
+    .pin-edit-btn{ font-size:14px; padding:5px 7px; }
+    .app-mode-btn{ padding:12px 8px; font-size:13px; }
+    .mode-btn{ padding:10px 8px; font-size:13px; }
+    .swatch{ width:26px; height:26px; }
+    .icon-swatch{ width:32px; height:32px; }
+    .icon-swatch svg{ width:17px; height:17px; }
+    .route-link{ padding:13px 12px; font-size:14px; }
+    .clear-all{ padding:4px; }
+    .drag-handle{ font-size:16px; padding:6px 4px 6px 0; }
+
     #details-side-panel{
       position:fixed; inset:0; width:100%; min-width:0; height:100%;
       z-index:60; border-left:none; padding:16px;
@@ -373,6 +419,7 @@
       width:100%; min-width:0; padding:16px; border-left:none;
       transform:translateY(0);
     }
+    #close-details-btn{ width:38px; height:38px; font-size:19px; }
   }
 </style>
 </head>
@@ -405,9 +452,10 @@
 
 <div id="app">
   <div id="sidebar">
+    <div id="sheet-handle"><span></span></div>
     <div class="sidebar-header">
       <div>
-        <h1>Tokyo Transit Planner <span class="version-tag" id="version-tag">v1.4.0</span></h1>
+        <h1>Tokyo Transit Planner <span class="version-tag" id="version-tag">v1.5.0</span></h1>
         <div class="sub" id="sidebar-sub">Search to pin, then pick a From / To for routing</div>
       </div>
       <button id="theme-toggle" title="Toggle light/dark theme">🌙</button>
@@ -599,6 +647,91 @@ document.getElementById('theme-toggle').addEventListener('click', async () => {
   if(fromPin && toPin) updateConnectorLine(fromPin, toPin);
 });
 initTheme();
+
+/* ---------------- mobile bottom sheet (drag + tap-to-cycle) ---------------- */
+const SHEET_STATES = ['peek', 'half', 'full'];
+const SHEET_PEEK_PX = 168;
+let sheetState = 'peek';
+
+function isMobileLayout(){ return window.matchMedia('(max-width: 720px)').matches; }
+
+function setSheetState(state){
+  sheetState = state;
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.remove('sheet-half', 'sheet-full');
+  if(state === 'half') sidebar.classList.add('sheet-half');
+  else if(state === 'full') sidebar.classList.add('sheet-full');
+}
+
+function sheetVisiblePxForState(state){
+  const vh = window.innerHeight;
+  if(state === 'full') return vh * 0.92;
+  if(state === 'half') return vh * 0.5;
+  return SHEET_PEEK_PX;
+}
+
+function initMobileSheet(){
+  const handle = document.getElementById('sheet-handle');
+  const sidebar = document.getElementById('sidebar');
+  if(!handle || !sidebar) return;
+
+  let startY = 0, startVisiblePx = 0, dragging = false;
+
+  function onDragStart(clientY){
+    if(!isMobileLayout()) return;
+    startY = clientY;
+    startVisiblePx = sheetVisiblePxForState(sheetState);
+    dragging = false;
+    sidebar.classList.add('dragging');
+  }
+  function onDragMove(clientY){
+    if(!isMobileLayout() || startY === 0) return;
+    const deltaY = clientY - startY;
+    if(Math.abs(deltaY) > 5) dragging = true;
+    if(!dragging) return;
+    const maxPx = window.innerHeight * 0.92;
+    const visiblePx = Math.min(maxPx, Math.max(SHEET_PEEK_PX, startVisiblePx - deltaY));
+    sidebar.style.transform = `translateY(calc(100% - ${visiblePx}px))`;
+  }
+  function onDragEnd(){
+    if(!isMobileLayout()){ startY = 0; return; }
+    sidebar.classList.remove('dragging');
+    sidebar.style.transform = '';
+    if(dragging){
+      // Compare the sheet's current visible height against each state's
+      // target and snap to the closest one.
+      const candidates = SHEET_STATES.map(s => ({ s, px: sheetVisiblePxForState(s) }));
+      let best = candidates[0];
+      let bestDist = Infinity;
+      const currentVisible = window.innerHeight - sidebar.getBoundingClientRect().top;
+      candidates.forEach(c => {
+        const d = Math.abs(c.px - currentVisible);
+        if(d < bestDist){ bestDist = d; best = c; }
+      });
+      setSheetState(best.s);
+    } else {
+      // Plain tap on the handle — cycle to the next state.
+      const idx = SHEET_STATES.indexOf(sheetState);
+      setSheetState(SHEET_STATES[(idx + 1) % SHEET_STATES.length]);
+    }
+    startY = 0;
+    setTimeout(() => { dragging = false; }, 50);
+  }
+
+  handle.addEventListener('touchstart', (e) => onDragStart(e.touches[0].clientY), { passive:true });
+  handle.addEventListener('touchmove', (e) => onDragMove(e.touches[0].clientY), { passive:true });
+  handle.addEventListener('touchend', onDragEnd);
+
+  // Mouse equivalents too, so this is testable on desktop by shrinking the window.
+  handle.addEventListener('mousedown', (e) => {
+    onDragStart(e.clientY);
+    const onMove = (ev) => onDragMove(ev.clientY);
+    const onUp = () => { onDragEnd(); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
+}
+initMobileSheet();
 
 /* ---------------- pin-creation mode ----------------
    Off by default so panning/exploring the map never accidentally drops a pin. */
