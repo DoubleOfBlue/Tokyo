@@ -191,12 +191,24 @@
   .map-pin.is-to{ --pin-glow: drop-shadow(0 0 5px var(--to-border)); transform:scale(1.18); transform-origin:bottom center; }
   .map-pin.is-viewing{ --pin-glow: drop-shadow(0 0 5px var(--amber)); transform:scale(1.18); transform-origin:bottom center; }
   .map-pin-label{
-    position:absolute; left:32px; top:12px; transform:translateY(-50%);
+    position:absolute; left:32px; top:50%; transform:translateY(-50%);
     background:var(--panel-raised); color:var(--ink); border:1px solid var(--border);
     font-family:'Zen Kaku Gothic New', sans-serif; font-size:11px; font-weight:500;
     padding:3px 8px; border-radius:3px; white-space:nowrap; box-shadow:var(--shadow);
     pointer-events:none; max-width:180px; overflow:hidden; text-overflow:ellipsis;
   }
+
+  /* Icon-mode marker: a circular badge that fully replaces the teardrop.
+     Positioned via bottom-offset so the badge's own center — not the
+     wrapper's bottom edge — lands on the true map coordinate. */
+  .map-pin.map-pin--icon{ width:30px; height:30px; }
+  .icon-badge{
+    position:absolute; bottom:-15px; left:50%; transform:translateX(-50%);
+    width:30px; height:30px; border-radius:50%; box-sizing:border-box;
+    border:2px solid var(--bg); box-shadow:0 1px 4px rgba(0,0,0,.45);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .icon-badge svg{ width:16px; height:16px; }
 
   /* "You are here" marker — positioned so its visual center (not the default
      bottom-anchor) lines up with the actual coordinate. */
@@ -256,26 +268,27 @@
   .pin-edit-panel{
     margin-top:9px; padding:10px; background:var(--panel-raised); border:1px solid var(--border);
     border-radius:var(--radius); animation: fade-in-up .2s ease;
+    display:flex; flex-direction:column; gap:9px;
   }
-  .edit-row-label{ font-size:10px; color:var(--ink-dim); letter-spacing:.03em; margin:9px 0 5px; }
-  .edit-row-label:first-child{ margin-top:0; }
+  .pin-edit-panel .pin-btn{ width:100%; text-align:center; }
   .rename-input{
     width:100%; background:var(--panel); border:1px solid var(--border); color:var(--ink);
     padding:6px 8px; border-radius:var(--radius); font-size:12px; font-family:inherit;
   }
   .rename-input:focus{ outline:none; border-color:var(--amber); }
-  .color-swatches{ display:flex; gap:6px; flex-wrap:wrap; }
+  .icon-swatches{ display:flex; gap:6px; flex-wrap:wrap; }
+  .icon-swatch{
+    width:26px; height:26px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
+    box-sizing:border-box; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .icon-swatch svg{ width:14px; height:14px; }
+  .icon-swatch.selected{ border-color:var(--ink); box-shadow:0 0 0 2px var(--panel-raised); }
+  .color-swatches{ display:flex; gap:6px; flex-wrap:wrap; padding-top:2px; border-top:1px solid var(--border); }
   .swatch{
-    width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
+    width:20px; height:20px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
     box-sizing:border-box;
   }
   .swatch.selected{ border-color:var(--ink); box-shadow:0 0 0 2px var(--panel-raised); }
-  .icon-presets{ display:flex; gap:5px; flex-wrap:wrap; }
-  .icon-preset{
-    width:26px; height:26px; border-radius:var(--radius); border:1px solid var(--border); background:var(--panel);
-    cursor:pointer; font-size:13px; display:flex; align-items:center; justify-content:center; padding:0; color:var(--ink-dim);
-  }
-  .icon-preset.selected{ border-color:var(--amber); background:var(--amber-dim); color:var(--ink); }
   .pin-remove{ background:none; border:none; color:var(--ink-dim); cursor:pointer; font-size:15px; padding:2px 6px; flex-shrink:0; border-radius:var(--radius); line-height:1; }
   .pin-remove:hover{ color:var(--error); background:var(--panel-raised); }
   .empty-note{ color:var(--ink-dim); font-size:12px; padding:16px 10px; line-height:1.6; border:1px dashed var(--border); border-radius:var(--radius); margin:4px; text-align:center; }
@@ -371,7 +384,7 @@
   <div id="sidebar">
     <div class="sidebar-header">
       <div>
-        <h1>Tokyo Transit Planner <span class="version-tag" id="version-tag">v1.2.0</span></h1>
+        <h1>Tokyo Transit Planner <span class="version-tag" id="version-tag">v1.3.0</span></h1>
         <div class="sub" id="sidebar-sub">Search to pin, then pick a From / To for routing</div>
       </div>
       <button id="theme-toggle" title="Toggle light/dark theme">🌙</button>
@@ -490,7 +503,22 @@ function findPinById(id){
   return pins.find(p => p.id === id) || null;
 }
 const DOT_COLORS = ['#e6b94d','#7bc142','#e2574c','#4d9fe6','#c17be6','#e68a4d'];
-const ICON_PRESETS = ['', '🍜', '☕', '🍣', '🏨', '⛩️', '🛍️', '🎡', '🌳', '🚉'];
+
+// Small hand-built vector icon set (simple primitives only — no complex
+// bezier paths — so they render correctly without needing visual testing).
+// Each renders in white on top of the pin's own color as a circular badge
+// that fully replaces the teardrop shape once selected.
+const ICON_LIBRARY = [
+  { id: 'food', label: 'Food', svg: '<ellipse cx="12" cy="8" rx="4" ry="5" fill="white"/><rect x="11" y="12" width="2" height="9" rx="1" fill="white"/>' },
+  { id: 'cafe', label: 'Cafe', svg: '<path d="M5 8h11v6a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V8z" fill="white"/><path d="M16 9.5h1.5a2 2 0 0 1 0 4H16" fill="none" stroke="white" stroke-width="1.5"/><rect x="4" y="19" width="13" height="1.6" rx="0.8" fill="white"/>' },
+  { id: 'hotel', label: 'Hotel', svg: '<rect x="3" y="12" width="18" height="7" rx="1.5" fill="white"/><rect x="4" y="8" width="6" height="5" rx="1.5" fill="white" opacity="0.65"/><rect x="3" y="19" width="2" height="2" fill="white"/><rect x="19" y="19" width="2" height="2" fill="white"/>' },
+  { id: 'temple', label: 'Temple', svg: '<rect x="4" y="7" width="16" height="2" fill="white"/><rect x="6" y="10" width="12" height="1.5" fill="white"/><rect x="6" y="9" width="2" height="12" fill="white"/><rect x="16" y="9" width="2" height="12" fill="white"/>' },
+  { id: 'shopping', label: 'Shopping', svg: '<path d="M6 8h12l1 12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L6 8z" fill="white"/><path d="M9 8V6a3 3 0 0 1 6 0v2" fill="none" stroke="white" stroke-width="1.5"/>' },
+  { id: 'attraction', label: 'Attraction', svg: '<polygon points="12,2 14.7,9 22,9 16.2,13.6 18.5,21 12,16.8 5.5,21 7.8,13.6 2,9 9.3,9" fill="white"/>' },
+  { id: 'park', label: 'Park', svg: '<polygon points="12,2 6,12 9,12 5,19 19,19 15,12 18,12" fill="white"/><rect x="11" y="19" width="2" height="3" fill="white"/>' },
+  { id: 'train', label: 'Train', svg: '<rect x="5" y="4" width="14" height="12" rx="3" fill="white"/><circle cx="8" cy="18" r="1.6" fill="white"/><circle cx="16" cy="18" r="1.6" fill="white"/><rect x="9" y="16" width="6" height="1" fill="white"/>' },
+];
+function findIconDef(id){ return ICON_LIBRARY.find(i => i.id === id) || null; }
 let editingPinId = null;   // pin currently showing its edit panel in the list
 let dragSourcePinId = null;
 const TOKYO_CENTER = { lat: 35.6812, lng: 139.7671 };
@@ -747,7 +775,7 @@ async function initApp(){
 /* ---------------- pins ---------------- */
 function addPin(p){
   if(pins.find(x => x.id === p.id)) return;
-  if(!p.color) p.color = DOT_COLORS[pins.length % DOT_COLORS.length];
+  if(!p.color) p.color = DOT_COLORS[Math.floor(Math.random() * DOT_COLORS.length)];
   if(p.icon === undefined) p.icon = null;
   pins.push(p);
   placeMarker(p);
@@ -759,15 +787,26 @@ function addPin(p){
 
 function buildPinContentHtml(pin){
   const color = pin.color || '#e6b94d';
-  const iconGlyph = pin.icon
-    ? `<text x="13" y="13.5" text-anchor="middle" dominant-baseline="central" font-size="9">${escapeHtml(pin.icon)}</text>`
-    : '';
+  const iconDef = findIconDef(pin.icon);
+
+  if(iconDef){
+    // Icon mode fully replaces the teardrop with a circular badge. The
+    // badge is offset so its own center — not the wrapper's bottom edge —
+    // lands on the true coordinate, same centering trick used for the
+    // "you are here" marker elsewhere in this file.
+    return `
+      <div class="icon-badge" style="background:${color};">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${iconDef.svg}</svg>
+      </div>
+      <div class="map-pin-label">${escapeHtml(pin.name)}</div>
+    `;
+  }
+
   return `
     <svg viewBox="0 0 26 35" xmlns="http://www.w3.org/2000/svg">
       <path d="M13 0C5.8 0 0 5.8 0 13c0 9.7 13 22 13 22s13-12.3 13-22C26 5.8 20.2 0 13 0z"
             style="fill:${color}; stroke:var(--bg); stroke-width:1.5;"></path>
       <circle cx="13" cy="13" r="5.5" style="fill:var(--bg);"></circle>
-      ${iconGlyph}
     </svg>
     <div class="map-pin-label">${escapeHtml(pin.name)}</div>
   `;
@@ -776,6 +815,7 @@ function buildPinContentHtml(pin){
 function placeMarker(p){
   const wrap = document.createElement('div');
   wrap.className = 'map-pin';
+  wrap.classList.toggle('map-pin--icon', !!findIconDef(p.icon));
   wrap.innerHTML = buildPinContentHtml(p);
   const marker = new AdvancedMarkerElement({
     map, position: { lat: p.lat, lng: p.lng }, content: wrap, title: p.name, gmpClickable: true,
@@ -790,6 +830,7 @@ function placeMarker(p){
 function refreshMarkerContent(pin){
   const marker = markers[pin.id];
   if(!marker || !marker.content) return;
+  marker.content.classList.toggle('map-pin--icon', !!findIconDef(pin.icon));
   marker.content.innerHTML = buildPinContentHtml(pin);
   marker.title = pin.name;
 }
@@ -984,19 +1025,23 @@ function renderPinList(){
 }
 
 function buildEditPanelHtml(p){
+  const noneSwatch = `
+    <button class="icon-swatch ${!p.icon ? 'selected' : ''}" data-act="set-icon" data-id="${p.id}" data-icon="" title="Default pin" style="background:${p.color};">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="none" stroke="white" stroke-width="2.2"/></svg>
+    </button>`;
+  const iconSwatches = ICON_LIBRARY.map(i => `
+    <button class="icon-swatch ${p.icon===i.id ? 'selected' : ''}" data-act="set-icon" data-id="${p.id}" data-icon="${i.id}" title="${i.label}" style="background:${p.color};">
+      <svg viewBox="0 0 24 24">${i.svg}</svg>
+    </button>`).join('');
+  const colorSwatches = DOT_COLORS.map(c => `
+    <button class="swatch ${p.color===c ? 'selected' : ''}" data-act="set-color" data-id="${p.id}" data-color="${c}" style="background:${c}"></button>`).join('');
+
   return `
     <div class="pin-edit-panel">
-      <div class="edit-row-label">Rename</div>
-      <input type="text" class="rename-input" data-id="${p.id}" value="${escapeHtml(p.name)}">
-      <div class="edit-row-label">Color</div>
-      <div class="color-swatches">
-        ${DOT_COLORS.map(c => `<button class="swatch ${p.color===c?'selected':''}" data-act="set-color" data-id="${p.id}" data-color="${c}" style="background:${c}"></button>`).join('')}
-      </div>
-      <div class="edit-row-label">Icon</div>
-      <div class="icon-presets">
-        ${ICON_PRESETS.map(ic => `<button class="icon-preset ${(p.icon||'')===ic?'selected':''}" data-act="set-icon" data-id="${p.id}" data-icon="${ic}">${ic || '∅'}</button>`).join('')}
-      </div>
-      <button class="pin-btn" data-act="close-edit" style="margin-top:10px; width:100%;">Done</button>
+      <input type="text" class="rename-input" data-id="${p.id}" value="${escapeHtml(p.name)}" placeholder="Pin name">
+      <div class="icon-swatches">${noneSwatch}${iconSwatches}</div>
+      <div class="color-swatches">${colorSwatches}</div>
+      <button class="pin-btn" data-act="close-edit">Done</button>
     </div>
   `;
 }
@@ -1022,7 +1067,7 @@ function attachDragHandlers(item, pinId){
     e.preventDefault();
     item.classList.remove('drag-over');
     if(!dragSourcePinId || dragSourcePinId === pinId) return;
-    reorderPins(dragSourcePinId, pinId);
+    animateReorder(() => reorderPins(dragSourcePinId, pinId));
   });
 }
 
@@ -1034,6 +1079,36 @@ function reorderPins(sourceId, targetId){
   pins.splice(toIdx, 0, moved);
   storeSet('tokyo-pins', pins);
   renderPinList();
+}
+
+// FLIP technique: capture each row's position before the DOM changes, let
+// the change happen (re-render with the new order), then measure again and
+// animate from the old position to the new one — so reordering slides
+// smoothly into place instead of the list just snapping.
+function animateReorder(mutateAndRender){
+  const list = document.getElementById('pin-list');
+  const firstRects = new Map();
+  list.querySelectorAll('.pin-item').forEach(item => {
+    firstRects.set(item.getAttribute('data-pin-id'), item.getBoundingClientRect());
+  });
+
+  mutateAndRender();
+
+  list.querySelectorAll('.pin-item').forEach(item => {
+    const id = item.getAttribute('data-pin-id');
+    const first = firstRects.get(id);
+    if(!first) return;
+    const last = item.getBoundingClientRect();
+    const deltaY = first.top - last.top;
+    if(Math.abs(deltaY) > 0.5){
+      item.style.transition = 'none';
+      item.style.transform = `translateY(${deltaY}px)`;
+      requestAnimationFrame(() => {
+        item.style.transition = 'transform .25s ease';
+        item.style.transform = '';
+      });
+    }
+  });
 }
 
 function updateRouteFields(){
