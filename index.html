@@ -3,589 +3,1696 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tokyo Itinerary — Line Map</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<title>Tokyo Transit Planner</title>
+<script>
+  // Replaced at build time with a real key when GOOGLE_MAPS_API_KEY is set
+  // as a Vercel environment variable (see build.js). Left as this literal
+  // placeholder string when no build step ran (e.g. opened directly as a
+  // local file), which the app below treats as "not configured" and falls
+  // back to asking for a key manually.
+  window.__GOOGLE_MAPS_API_KEY__ = "%%GOOGLE_MAPS_API_KEY%%";
+  // Same build-time injection pattern, for an optional shared passcode.
+  // If TRIP_PASSCODE is never set in Vercel, this stays as the literal
+  // placeholder below, and the app treats that as "no passcode configured"
+  // — skipping the lock screen entirely rather than locking everyone out.
+  window.__TRIP_PASSCODE__ = "%%TRIP_PASSCODE%%";
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --ink:#1b2438; --ink-soft:#4a5468; --paper:#f7f6f2; --paper-raised:#ffffff;
-    --line:#dcd8cd; --accent:#c0392b; --radius:10px;
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-raised: #1e222c;
+    --border: #2a2e38;
+    --ink: #edeae2;
+    --ink-dim: #8b93a1;
+    --amber: #e6b94d;
+    --amber-dim: #4a3f24;
+    --error: #e2574c;
+    --radius: 3px;
+    --from-bg: #2d5a3d; --from-border: #3f7a53; --from-text: #bdf0cf;
+    --to-bg: var(--amber-dim); --to-border: var(--amber); --to-text: var(--amber);
+    --shadow: 0 2px 10px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"]{
+    --bg: #eceef1;
+    --panel: #ffffff;
+    --panel-raised: #f3f4f6;
+    --border: #dde1e6;
+    --ink: #1a1d24;
+    --ink-dim: #6b7280;
+    --amber: #c9902e;
+    --amber-dim: #fbecc9;
+    --error: #c53c30;
+    --from-bg: #dff3e6; --from-border: #79bf92; --from-text: #1f6b3a;
+    --to-bg: #fbecc9; --to-border: #c9902e; --to-text: #8a6414;
+    --shadow: 0 2px 10px rgba(20,20,20,.12);
   }
   *{box-sizing:border-box;}
   html,body{height:100%;margin:0;}
-  body{font-family:'Inter',system-ui,sans-serif;color:var(--ink);background:var(--paper);overflow:hidden;}
-  #app{display:flex;height:100vh;width:100vw;}
-  #sidebar{width:340px;min-width:340px;background:var(--paper-raised);border-right:1px solid var(--line);display:flex;flex-direction:column;height:100%;overflow:hidden;z-index:20;}
-  header{padding:18px 18px 14px;border-bottom:1px solid var(--line);}
-  header h1{font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:700;margin:0 0 2px;letter-spacing:-0.01em;}
-  header p{margin:0;font-size:12.5px;color:var(--ink-soft);}
-  .toolbar{display:flex;gap:8px;padding:12px 18px;border-bottom:1px solid var(--line);}
-  button{font-family:'Inter',sans-serif;cursor:pointer;border:none;border-radius:8px;font-size:13px;font-weight:600;transition:transform .08s ease, background .15s ease;}
-  button:active{transform:scale(0.97);}
-  button:disabled{opacity:.55;cursor:default;}
-  .btn-primary{flex:1;background:var(--ink);color:#fff;padding:10px 12px;}
-  .btn-primary.active{background:var(--accent);}
-  .btn-secondary{flex:1;background:#eeece4;color:var(--ink);padding:10px 12px;}
-  .btn-secondary.active{background:var(--accent);color:#fff;}
-  .scroll-area{flex:1;overflow-y:auto;padding:6px 0 20px;}
-  .day-group{margin:14px 18px 0;}
-  .day-title{display:flex;align-items:center;gap:8px;font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13px;margin-bottom:8px;}
-  .day-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
-  .stop-card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;margin-bottom:7px;cursor:pointer;position:relative;}
-  .stop-card:hover{border-color:var(--ink-soft);}
-  .stop-name{font-weight:600;font-size:13.5px;}
-  .stop-notes{font-size:12px;color:var(--ink-soft);margin-top:2px;}
-  .stop-del{position:absolute;top:8px;right:8px;background:none;color:var(--ink-soft);font-size:15px;line-height:1;padding:2px 4px;border-radius:5px;}
-  .stop-del:hover{background:#e5e1d5;color:var(--accent);}
-  .empty-hint{margin:24px 18px;font-size:12.5px;color:var(--ink-soft);line-height:1.5;}
-  #legend{border-top:1px solid var(--line);padding:12px 18px 16px;max-height:34%;overflow-y:auto;}
-  #legend h2{font-family:'Space Grotesk',sans-serif;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);margin:0 0 8px;font-weight:600;}
-  .legend-item{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:7px;cursor:pointer;font-size:12.5px;font-weight:500;}
-  .legend-item:hover{background:#eeece4;}
-  .legend-item.dimmed{opacity:.4;}
-  .legend-swatch{width:16px;height:5px;border-radius:3px;flex-shrink:0;}
-  .legend-clear{margin-top:6px;background:none;color:var(--accent);font-size:12px;font-weight:600;padding:4px 6px;}
-  #map{flex:1;height:100%;}
-  .pin-label{font-family:'Inter',sans-serif;font-weight:600;font-size:11.5px;background:var(--paper-raised);border:1.5px solid var(--ink);border-radius:6px;padding:1px 6px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.15);}
-  .pin-dot{border-radius:50%;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);}
-  .hint-banner{position:absolute;top:14px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:20px;font-size:12.5px;font-weight:500;z-index:1000;box-shadow:0 4px 14px rgba(0,0,0,.25);display:none;max-width:80%;text-align:center;}
-  .modal-overlay{position:fixed;inset:0;background:rgba(20,20,20,.45);display:none;align-items:center;justify-content:center;z-index:2000;padding:16px;}
-  .modal-overlay.open{display:flex;}
-  .modal{background:var(--paper-raised);border-radius:14px;width:100%;max-width:420px;max-height:88vh;overflow-y:auto;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3);}
-  .modal h2{font-family:'Space Grotesk',sans-serif;font-size:17px;margin:0 0 14px;}
-  .modal p.sub{font-size:12.5px;color:var(--ink-soft);margin:-8px 0 14px;line-height:1.5;}
-  .field{margin-bottom:12px;}
-  .field label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:5px;}
-  .field input,.field select,.field textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:'Inter',sans-serif;font-size:13.5px;background:var(--paper);color:var(--ink);}
-  .field textarea{resize:vertical;min-height:50px;}
-  .field small{display:block;margin-top:4px;color:var(--ink-soft);font-size:11px;}
-  .day-colors{display:flex;gap:6px;flex-wrap:wrap;}
-  .day-swatch{width:30px;height:30px;border-radius:50%;cursor:pointer;border:2.5px solid transparent;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;}
-  .day-swatch.selected{border-color:var(--ink);}
-  .leg-block{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--paper);}
-  .leg-block .leg-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
-  .leg-block .leg-top span{font-size:12px;font-weight:600;color:var(--ink-soft);}
-  .leg-remove{background:none;color:var(--accent);font-size:12px;font-weight:600;}
-  .leg-result{border-radius:8px;padding:8px 10px;margin-top:8px;font-size:12.5px;display:flex;align-items:center;gap:8px;}
-  .leg-result.found{background:#eef6ee;}
-  .leg-result.notfound{background:#fbecec;color:var(--accent);}
-  .leg-result-bar{width:5px;align-self:stretch;border-radius:3px;flex-shrink:0;min-height:28px;}
-  .leg-result-body{flex:1;}
-  .leg-result-name{font-weight:600;}
-  .leg-result-sub{font-size:11.5px;color:var(--ink-soft);margin-top:1px;}
-  .find-btn{width:100%;background:var(--ink);color:#fff;padding:9px;border-radius:8px;font-size:13px;margin-top:2px;}
-  .add-leg-btn{width:100%;background:#eeece4;color:var(--ink);padding:9px;border-radius:8px;font-size:13px;margin-bottom:14px;}
-  .modal-actions{display:flex;gap:8px;margin-top:6px;}
-  .modal-actions button{flex:1;padding:11px;}
-  .btn-cancel{background:#eeece4;color:var(--ink);}
-  .btn-save{background:var(--ink);color:#fff;}
-  .status-line{font-size:11.5px;color:var(--ink-soft);margin-top:8px;min-height:14px;line-height:1.5;}
-  .match-choice{border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-top:6px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12.5px;}
-  .match-choice:hover{background:#eeece4;}
-  .autocomplete-box{position:relative;}
-  .ac-list{position:absolute;left:0;right:0;top:100%;background:var(--paper-raised);border:1px solid var(--line);border-radius:8px;max-height:160px;overflow-y:auto;z-index:10;box-shadow:0 6px 16px rgba(0,0,0,.12);display:none;}
-  .ac-list.open{display:block;}
-  .ac-item{padding:7px 10px;font-size:13px;cursor:pointer;}
-  .ac-item:hover{background:#eeece4;}
-  @media (max-width:760px){
-    #app{flex-direction:column;}
-    #sidebar{width:100%;min-width:0;height:44%;border-right:none;border-bottom:1px solid var(--line);order:2;}
-    #map{height:56%;order:1;}
+  body{ font-family:'Zen Kaku Gothic New', sans-serif; background:var(--bg); color:var(--ink); overflow:hidden; transition:background .18s ease, color .18s ease; }
+  .mono{font-family:'IBM Plex Mono', monospace;}
+  button, a, input{ transition: background .15s ease, color .15s ease, border-color .15s ease, opacity .15s ease, transform .1s ease; }
+  button:active{ transform: scale(0.96); }
+  .route-link:not([aria-disabled="true"]):active{ transform: scale(0.97); }
+  button:focus-visible, a:focus-visible, input:focus-visible{ outline:2px solid var(--amber); outline-offset:2px; }
+
+  /* ---------- Setup gate ---------- */
+  #setup, #passcode-gate{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:50; padding:24px; }
+  #setup.hidden, #passcode-gate.hidden{display:none;}
+  .setup-card{ max-width:460px; width:100%; border:1px solid var(--border); background:var(--panel); padding:32px; border-radius:var(--radius); }
+  .setup-card h1{ font-size:22px; margin:0 0 6px; font-weight:700; }
+  .setup-card .sub{ color:var(--ink-dim); font-size:14px; margin:0 0 24px; line-height:1.6; }
+  .setup-card label{ display:block; font-size:12px; letter-spacing:.02em; color:var(--ink-dim); margin-bottom:6px; }
+  .setup-card input[type=text], .setup-card input[type=password]{
+    width:100%; background:var(--panel-raised); border:1px solid var(--border); color:var(--ink);
+    padding:10px 12px; border-radius:var(--radius); font-family:'IBM Plex Mono',monospace; font-size:13px; margin-bottom:14px;
+  }
+  .setup-card input[type=text]:focus, .setup-card input[type=password]:focus{outline:none; border-color:var(--amber);}
+  .setup-card button{
+    width:100%; background:var(--amber); color:#1a1400; border:none; padding:11px;
+    font-weight:700; font-size:14px; border-radius:var(--radius); cursor:pointer; font-family:inherit;
+  }
+  .setup-card button:hover{filter:brightness(1.08);}
+  .setup-help{ margin-top:18px; padding-top:18px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-dim); line-height:1.7; }
+  .setup-help a{color:var(--amber);}
+  .setup-error{color:var(--error); font-size:13px; margin:0 0 14px; display:none;}
+
+  /* ---------- App layout ---------- */
+  #app{ display:none; height:100%; width:100%; }
+  #app.visible{ display:flex; }
+  #sidebar{
+    width:360px; min-width:360px; height:100%; background:var(--panel);
+    border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden;
+  }
+  #map-wrap{ flex:1; height:100%; position:relative; }
+  #map{ width:100%; height:100%; }
+  #map.dark-filter{ filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9) saturate(0.9); }
+
+  #details-side-panel{
+    width:0; min-width:0; height:100%; background:var(--panel);
+    border-left:1px solid transparent; display:flex; flex-direction:column;
+    overflow-x:hidden; overflow-y:auto; padding:16px 0;
+    opacity:0;
+    transition: width .28s ease, padding .28s ease, opacity .2s ease, border-color .28s ease;
+  }
+  #details-side-panel.visible{
+    width:420px; min-width:420px; border-left-color:var(--border); padding:16px 20px; opacity:1;
+  }
+  .details-panel-header{
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:12px; color:var(--ink-dim); letter-spacing:.03em; margin-bottom:12px;
+    padding-bottom:10px; border-bottom:1px solid var(--border);
+  }
+  .details-panel-header span{ font-weight:600; }
+  #close-details-btn{
+    width:26px; height:26px; border-radius:50%; border:1px solid var(--border);
+    background:var(--panel-raised); color:var(--ink); cursor:pointer; font-size:16px; line-height:1;
+    display:flex; align-items:center; justify-content:center; padding:0;
+  }
+  #close-details-btn:hover{ border-color:var(--error); color:var(--error); }
+
+  .sidebar-header{ padding:16px 18px 14px; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+  .sidebar-header h1{ font-size:16px; font-weight:700; margin:0 0 2px; letter-spacing:.01em; display:flex; align-items:center; gap:7px; }
+  .version-tag{ font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:500; color:var(--ink-dim); background:var(--panel-raised); border:1px solid var(--border); border-radius:3px; padding:1px 5px; letter-spacing:0; }
+  .sidebar-header .sub{ font-size:11px; color:var(--ink-dim); }
+
+  .app-mode-tabs{ display:flex; padding:10px 18px 0; border-bottom:1px solid var(--border); gap:0; }
+  .app-mode-btn{
+    flex:1; padding:9px 8px; font-size:12px; font-weight:600; font-family:inherit;
+    background:transparent; color:var(--ink-dim); border:none; border-bottom:2px solid transparent;
+    cursor:pointer; margin-bottom:-1px;
+  }
+  .app-mode-btn:hover{ color:var(--ink); }
+  .app-mode-btn.active{ color:var(--amber); border-bottom-color:var(--amber); }
+  #theme-toggle{
+    flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid var(--border);
+    background:var(--panel-raised); color:var(--ink); cursor:pointer; font-size:14px;
+    display:flex; align-items:center; justify-content:center; padding:0;
+  }
+  #theme-toggle:hover{ border-color:var(--amber); }
+
+  .section{ padding:12px 16px; border-bottom:1px solid var(--border); }
+  .section-title{ font-size:11px; color:var(--ink-dim); margin:0 0 10px; letter-spacing:.03em; display:flex; align-items:center; justify-content:space-between; }
+  .section-title .clear-all{ font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink-dim); background:none; border:none; cursor:pointer; letter-spacing:0; text-decoration:underline; text-underline-offset:2px; padding:0; }
+  .section-title .clear-all:hover{ color:var(--error); }
+  .pin-count{ font-family:'IBM Plex Mono',monospace; color:var(--ink-dim); font-weight:400; }
+
+  #search-container{ position:relative; width:100%; }
+  #search-input{
+    width:100%; background:var(--panel-raised); border:1px solid var(--border); color:var(--ink);
+    padding:9px 11px; border-radius:var(--radius); font-size:13px; font-family:inherit; box-sizing:border-box;
+  }
+  #search-input:focus{ outline:none; border-color:var(--amber); }
+  #search-dropdown{
+    display:none; position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:30;
+    background:var(--panel-raised); border:1px solid var(--border); border-radius:var(--radius);
+    box-shadow:var(--shadow); max-height:240px; overflow-y:auto;
+  }
+  #search-dropdown.visible{ display:block; }
+  .search-suggestion{ padding:9px 11px; font-size:12px; color:var(--ink); cursor:pointer; border-bottom:1px solid var(--border); }
+  .search-suggestion:last-child{ border-bottom:none; }
+  .search-suggestion:hover{ background:var(--panel); color:var(--amber); }
+
+  #place-details-host{ padding-top:4px; }
+  #place-details-host gmp-place-details{
+    width:100%; border:none; margin:0; color-scheme: dark;
+    --gmp-mat-color-surface: var(--panel-raised);
+    --gmp-mat-color-on-surface: var(--ink);
+    --gmp-mat-color-on-surface-variant: var(--ink-dim);
+    --gmp-mat-color-primary: var(--amber);
+    --gmp-mat-color-outline-decorative: var(--border);
+    --gmp-mat-font-family: 'Zen Kaku Gothic New', sans-serif;
+  }
+  :root[data-theme="light"] #place-details-host gmp-place-details{ color-scheme: light; }
+  #place-details-caveat{ font-size:11px; color:var(--ink-dim); line-height:1.6; padding:10px 2px 4px; border-top:1px solid var(--border); margin-top:8px; }
+
+  .search-row{ display:flex; gap:8px; align-items:stretch; }
+  .search-row #search-container{ flex:1; min-width:0; }
+  .pin-mode-btn{
+    flex-shrink:0; width:38px; font-size:16px; font-family:inherit;
+    background:var(--panel-raised); color:var(--ink-dim); border:1px solid var(--border);
+    border-radius:var(--radius); cursor:pointer; display:flex; align-items:center; justify-content:center;
+    -webkit-appearance:none; appearance:none;
+  }
+  .pin-mode-btn:hover{ border-color:var(--amber); }
+  .pin-mode-btn.active{ background:var(--to-bg); border-color:var(--to-border); }
+  #map.pin-mode-cursor{ cursor: crosshair; }
+
+  /* Custom map markers: a teardrop pin shape (anchored at its tip, the exact
+     coordinate) + a floating name label beside it. */
+  .map-pin{
+    position:relative; width:26px; height:35px; --pin-glow: none;
+    transform-origin: bottom center;
+    animation: pin-drop .35s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes pin-drop{
+    0% { transform: scale(0) translateY(-10px); opacity:0; }
+    60% { transform: scale(1.15) translateY(0); opacity:1; }
+    100% { transform: scale(1) translateY(0); }
+  }
+  @keyframes marker-bounce{
+    0%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-11px); }
+    50% { transform: translateY(0); }
+    68% { transform: translateY(-5px); }
+    84% { transform: translateY(0); }
+  }
+  .map-pin.bounce{ animation: marker-bounce .6s ease; }
+  .map-pin svg{ display:block; width:26px; height:35px; }
+  #map:not(.dark-filter) .map-pin{ filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)) var(--pin-glow); }
+  #map.dark-filter .map-pin{ filter: invert(1) hue-rotate(180deg) brightness(1.05) contrast(1.11) saturate(1.11) drop-shadow(0 2px 3px rgba(0,0,0,.4)) var(--pin-glow); }
+  .map-pin.is-from{ --pin-glow: drop-shadow(0 0 5px var(--from-border)); transform:scale(1.18); transform-origin:bottom center; }
+  .map-pin.is-to{ --pin-glow: drop-shadow(0 0 5px var(--to-border)); transform:scale(1.18); transform-origin:bottom center; }
+  .map-pin.is-viewing{ --pin-glow: drop-shadow(0 0 5px var(--amber)); transform:scale(1.18); transform-origin:bottom center; }
+  .map-pin-label{
+    position:absolute; left:32px; top:50%; transform:translateY(-50%);
+    background:var(--panel-raised); color:var(--ink); border:1px solid var(--border);
+    font-family:'Zen Kaku Gothic New', sans-serif; font-size:11px; font-weight:500;
+    padding:3px 8px; border-radius:3px; white-space:nowrap; box-shadow:var(--shadow);
+    pointer-events:none; max-width:180px; overflow:hidden; text-overflow:ellipsis;
+  }
+
+  /* Icon-mode marker: a circular badge that fully replaces the teardrop.
+     Positioned via bottom-offset so the badge's own center — not the
+     wrapper's bottom edge — lands on the true map coordinate. */
+  .map-pin.map-pin--icon{ width:30px; height:30px; }
+  .icon-badge{
+    position:absolute; bottom:-15px; left:50%; transform:translateX(-50%);
+    width:30px; height:30px; border-radius:50%; box-sizing:border-box;
+    border:2px solid var(--bg); box-shadow:0 1px 4px rgba(0,0,0,.45);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .icon-badge svg{ width:16px; height:16px; }
+
+  /* "You are here" marker — positioned so its visual center (not the default
+     bottom-anchor) lines up with the actual coordinate. */
+  .current-location-pin{ position:relative; width:20px; height:20px; }
+  #map.dark-filter .current-location-pin{ filter: invert(1) hue-rotate(180deg) brightness(1.05) contrast(1.11) saturate(1.11); }
+  .current-location-dot{
+    position:absolute; bottom:-7px; left:50%; transform:translateX(-50%);
+    width:14px; height:14px; border-radius:50%; background:#4285F4; border:2.5px solid #fff;
+    box-shadow:0 1px 4px rgba(0,0,0,.5); z-index:2;
+  }
+  .current-location-ring{
+    position:absolute; bottom:-10px; left:50%; transform:translateX(-50%);
+    width:20px; height:20px; border-radius:50%; background:rgba(66,133,244,.28);
+    animation: pulse-ring 2s ease-out infinite;
+  }
+  @keyframes pulse-ring{
+    0% { transform:translateX(-50%) scale(0.6); opacity:1; }
+    100% { transform:translateX(-50%) scale(2.4); opacity:0; }
+  }
+
+  #pin-list{ flex:1; overflow-y:auto; padding:6px 10px; }
+  .pin-item{ padding:9px 8px; border-radius:var(--radius); margin-bottom:2px; display:flex; align-items:flex-start; gap:8px; border:1px solid transparent; }
+  .pin-item:hover{ background:var(--panel-raised); border-color:var(--border); }
+  @keyframes pin-flash{
+    0%, 100% { background:transparent; border-color:transparent; }
+    25%, 75% { background:var(--to-bg); border-color:var(--to-border); }
+  }
+  .pin-item.flash{ animation: pin-flash 1.2s ease-in-out; }
+  .drag-handle{ cursor:grab; color:var(--ink-dim); font-size:12px; padding-top:4px; user-select:none; flex-shrink:0; }
+  .drag-handle:hover{ color:var(--ink); }
+  .pin-item.dragging{ opacity:.4; }
+  .pin-item.drag-over{ border-color:var(--amber); background:var(--amber-dim); }
+  .pin-dot{ width:9px; height:9px; border-radius:50%; margin-top:5px; flex-shrink:0; }
+  .pin-info{ flex:1; min-width:0; }
+  .pin-name-row{ display:flex; align-items:center; gap:4px; }
+  .pin-name{ font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+  .pin-edit-btn{
+    flex-shrink:0; background:none; border:none; cursor:pointer; font-size:11px; padding:2px 3px;
+    opacity:.5; border-radius:var(--radius);
+  }
+  .pin-edit-btn:hover{ opacity:1; background:var(--panel-raised); }
+  .pin-name{ cursor:pointer; }
+  .pin-name:hover{ color:var(--amber); text-decoration:underline; }
+  .mode-places .pin-actions{ display:none; }
+  .pin-item.selected-details{ border-color:var(--amber); background:var(--to-bg); }
+  .pin-addr{ font-size:11px; color:var(--ink-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pin-actions{ display:flex; gap:4px; margin-top:6px; }
+  .pin-btn{
+    font-size:10px; padding:3px 8px; border-radius:var(--radius); border:1px solid var(--border);
+    background:transparent; color:var(--ink-dim); cursor:pointer; font-family:'IBM Plex Mono',monospace; letter-spacing:.03em;
+  }
+  .pin-btn:hover{ border-color:var(--amber); color:var(--amber); }
+  .pin-btn.active-from{ background:var(--from-bg); border-color:var(--from-border); color:var(--from-text); }
+  .pin-btn.active-to{ background:var(--to-bg); border-color:var(--to-border); color:var(--to-text); }
+  .pin-btn.from-here{ margin-left:auto; }
+
+  .pin-edit-panel{
+    margin-top:9px; padding:10px; background:var(--panel-raised); border:1px solid var(--border);
+    border-radius:var(--radius); animation: fade-in-up .2s ease;
+    display:flex; flex-direction:column; gap:9px;
+  }
+  .pin-edit-panel .pin-btn{ width:100%; text-align:center; }
+  .rename-input{
+    width:100%; background:var(--panel); border:1px solid var(--border); color:var(--ink);
+    padding:6px 8px; border-radius:var(--radius); font-size:12px; font-family:inherit;
+  }
+  .rename-input:focus{ outline:none; border-color:var(--amber); }
+  .icon-swatches{ display:flex; gap:6px; flex-wrap:wrap; }
+  .icon-swatch{
+    width:26px; height:26px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
+    box-sizing:border-box; display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .icon-swatch svg{ width:14px; height:14px; }
+  .icon-swatch.selected{ border-color:var(--ink); box-shadow:0 0 0 2px var(--panel-raised); }
+  .color-swatches{ display:flex; gap:6px; flex-wrap:wrap; padding-top:2px; border-top:1px solid var(--border); }
+  .swatch{
+    width:20px; height:20px; border-radius:50%; border:2px solid transparent; cursor:pointer; padding:0;
+    box-sizing:border-box;
+  }
+  .swatch.selected{ border-color:var(--ink); box-shadow:0 0 0 2px var(--panel-raised); }
+  .pin-remove{ background:none; border:none; color:var(--ink-dim); cursor:pointer; font-size:15px; padding:2px 6px; flex-shrink:0; border-radius:var(--radius); line-height:1; }
+  .pin-remove:hover{ color:var(--error); background:var(--panel-raised); }
+  .empty-note{ color:var(--ink-dim); font-size:12px; padding:16px 10px; line-height:1.6; border:1px dashed var(--border); border-radius:var(--radius); margin:4px; text-align:center; }
+
+  .route-fields{ display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
+  .route-field{
+    display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--panel-raised);
+    border:1px solid var(--border); border-radius:var(--radius); font-size:12px;
+  }
+  .route-field .tag{ font-family:'IBM Plex Mono',monospace; font-size:10px; padding:2px 6px; border-radius:2px; flex-shrink:0; }
+  .route-field.from .tag{ background:var(--from-bg); color:var(--from-text); }
+  .route-field.to .tag{ background:var(--to-bg); color:var(--to-text); }
+  .route-field .val{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .route-field .val.placeholder{ color:var(--ink-dim); }
+
+  #get-route-btn{
+    width:100%; background:var(--amber); color:#1a1400; border:none; padding:10px;
+    font-weight:700; font-size:13px; border-radius:var(--radius); cursor:pointer; font-family:inherit;
+  }
+  #get-route-btn:disabled{ background:var(--border); color:var(--ink-dim); cursor:not-allowed; }
+  #get-route-btn:not(:disabled):hover{ filter:brightness(1.08); }
+
+  .route-stat{
+    font-size:11px; color:var(--ink-dim); margin:6px 2px 8px; display:none; font-family:'IBM Plex Mono',monospace;
+  }
+  @keyframes fade-in-up{
+    from { opacity:0; transform:translateY(6px); }
+    to { opacity:1; transform:translateY(0); }
+  }
+  .route-stat.visible{ display:block; animation: fade-in-up .25s ease; }
+  .route-stat #route-distance{ color:var(--ink); font-weight:600; }
+
+  .mode-toggle{ display:none; gap:6px; margin-bottom:10px; }
+  .mode-toggle.visible{ display:flex; animation: fade-in-up .25s ease .05s backwards; }
+  .mode-btn{
+    flex:1; padding:7px 6px; font-size:12px; font-family:inherit; font-weight:500;
+    border:1px solid var(--border); background:var(--panel-raised); color:var(--ink-dim);
+    border-radius:var(--radius); cursor:pointer;
+  }
+  .mode-btn:hover{ border-color:var(--amber); color:var(--ink); }
+  .mode-btn.active{ background:var(--amber); border-color:var(--amber); color:#1a1400; font-weight:700; }
+
+  .route-link{
+    display:flex; align-items:center; justify-content:space-between; width:100%; text-decoration:none;
+    background:var(--amber); color:#1a1400; border:none; padding:10px 12px; font-weight:700; font-size:13px;
+    border-radius:var(--radius); cursor:pointer; font-family:inherit; margin-bottom:8px;
+  }
+  .route-link:hover{ filter:brightness(1.08); }
+  .route-link.secondary{ background:var(--panel-raised); color:var(--ink); border:1px solid var(--border); font-weight:500; }
+  .route-link.secondary:hover{ border-color:var(--amber); color:var(--amber); filter:none; }
+  .route-link[aria-disabled="true"]{ opacity:.4; pointer-events:none; }
+  .route-link .arrow{ font-family:'IBM Plex Mono',monospace; }
+
+  ::-webkit-scrollbar{ width:8px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+  ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
+
+  #sheet-handle{ display:none; }
+
+  @media (max-width: 720px){
+    #app.visible{ position:relative; display:block; height:100%; }
+    #map-wrap{ position:absolute; inset:0; height:100%; }
+
+    /* Bottom sheet: replaces the desktop side-by-side layout with a
+       drag-to-resize panel over the map, the standard mobile-maps pattern
+       (Google/Apple Maps). Three snap states — peek/half/full — driven by
+       JS below. transform-only for smooth, GPU-accelerated dragging. */
+    #sidebar{
+      position:absolute; left:0; right:0; bottom:0; top:auto;
+      width:100%; min-width:0; height:100vh; height:100dvh;
+      border-right:none; border-top:1px solid var(--border);
+      border-radius:16px 16px 0 0; box-shadow:0 -6px 24px rgba(0,0,0,.35);
+      z-index:20; overflow:hidden;
+      transform: translateY(calc(100% - 178px));
+      transition: transform .32s cubic-bezier(.32,.72,0,1);
+    }
+    #sidebar.dragging{ transition:none; }
+    #sidebar.sheet-half{ transform: translateY(calc(100% - 50vh)); transform: translateY(calc(100% - 50dvh)); }
+    #sidebar.sheet-full{ transform: translateY(calc(100% - 92vh)); transform: translateY(calc(100% - 92dvh)); }
+
+    #sheet-handle{
+      display:flex; align-items:center; justify-content:center; height:30px; flex-shrink:0;
+      cursor:grab; touch-action:none; background:var(--panel-raised);
+      border-bottom:1px solid var(--border);
+    }
+    #sheet-handle span{ width:44px; height:5px; border-radius:3px; background:var(--ink-dim); }
+    #sidebar.dragging #sheet-handle{ cursor:grabbing; }
+    #sidebar.dragging #sheet-handle span{ background:var(--amber); }
+    @keyframes handle-hint{
+      0%, 100% { transform: scaleX(1); background:var(--ink-dim); }
+      50% { transform: scaleX(1.5); background:var(--amber); }
+    }
+    #sheet-handle.hint span{ animation: handle-hint .7s ease-in-out 3; }
+
+    .sidebar-header{ padding:2px 16px 10px; }
+    .app-mode-tabs{ flex-shrink:0; }
+    #pin-list{ -webkit-overflow-scrolling:touch; }
+
+    /* Bigger touch targets throughout — 44px is the standard comfortable
+       minimum tap size on mobile. */
+    .pin-mode-btn{ width:46px; font-size:19px; }
+    #theme-toggle{ width:38px; height:38px; font-size:16px; }
+    .pin-btn{ padding:7px 11px; font-size:11px; }
+    .pin-remove{ font-size:19px; padding:6px 10px; }
+    .pin-edit-btn{ font-size:14px; padding:5px 7px; }
+    .app-mode-btn{ padding:12px 8px; font-size:13px; }
+    .mode-btn{ padding:10px 8px; font-size:13px; }
+    .swatch{ width:26px; height:26px; }
+    .icon-swatch{ width:32px; height:32px; }
+    .icon-swatch svg{ width:17px; height:17px; }
+    .route-link{ padding:13px 12px; font-size:14px; }
+    .clear-all{ padding:4px; }
+    .drag-handle{ font-size:16px; padding:6px 4px 6px 0; }
+
+    #details-side-panel{
+      position:fixed; inset:0; width:100%; min-width:0; height:100%;
+      z-index:60; border-left:none; padding:16px;
+      opacity:1; transform:translateY(100%);
+      transition: transform .25s ease;
+    }
+    #details-side-panel.visible{
+      width:100%; min-width:0; padding:16px; border-left:none;
+      transform:translateY(0);
+    }
+    #close-details-btn{ width:38px; height:38px; font-size:19px; }
   }
 </style>
 </head>
 <body>
+
+<div id="passcode-gate" class="hidden">
+  <div class="setup-card">
+    <h1>Tokyo Transit Planner</h1>
+    <p class="sub">This trip planner is shared with the group — enter the passcode to continue.</p>
+    <p class="setup-error" id="passcode-error"></p>
+    <input type="password" id="passcode-input" placeholder="Passcode" autocomplete="off">
+    <button id="passcode-submit">Continue</button>
+  </div>
+</div>
+
+<div id="setup" class="hidden">
+  <div class="setup-card">
+    <h1>Tokyo Transit Planner</h1>
+    <p class="sub">Pin spots for your trip and get real JR / Metro / Toei transit directions between any two pins &mdash; no credit card needed.</p>
+    <p class="setup-error" id="setup-error"></p>
+    <label for="key-input">Google Maps Demo Key (or standard key)</label>
+    <input type="text" id="key-input" placeholder="AIza..." autocomplete="off" spellcheck="false">
+    <button id="key-submit">Load map</button>
+    <div class="setup-help">
+      This app uses only what the free <strong>Maps Demo Key</strong> supports &mdash; map rendering and place search &mdash; so no billing account is required. Get one at
+      <a href="https://developers.google.com/maps/documentation/javascript/demo-key" target="_blank">developers.google.com/maps/demo-key</a> (click &ldquo;Get a Demo Key,&rdquo; sign in with any Google account, no card). A standard billed key also works if you have one.
+    </div>
+  </div>
+</div>
+
 <div id="app">
   <div id="sidebar">
-    <header>
-      <h1>Tokyo Itinerary</h1>
-      <p>Tap a pin to add it, connect two pins to find the train route between them.</p>
-    </header>
-    <div class="toolbar">
-      <button class="btn-primary" id="btnAddPin">+ Pin</button>
-      <button class="btn-secondary" id="btnAddRoute">+ Route</button>
+    <div id="sheet-handle"><span></span></div>
+    <div class="sidebar-header">
+      <div>
+        <h1>Tokyo Transit Planner <span class="version-tag" id="version-tag">v1.6.0</span></h1>
+        <div class="sub" id="sidebar-sub">Search to pin, then pick a From / To for routing</div>
+      </div>
+      <button id="theme-toggle" title="Toggle light/dark theme">🌙</button>
     </div>
-    <div class="scroll-area" id="stopList"></div>
-    <div id="legend">
-      <h2>Lines used</h2>
-      <div id="legendItems"></div>
-      <button class="legend-clear" id="legendClear" style="display:none;">Clear highlight</button>
+
+    <div class="app-mode-tabs">
+      <button class="app-mode-btn active" id="mode-tab-navigate" data-mode="navigate">🧭 Navigate</button>
+      <button class="app-mode-btn" id="mode-tab-places" data-mode="places">📍 Places</button>
     </div>
-  </div>
-  <div style="position:relative;flex:1;">
-    <div class="hint-banner" id="hintBanner"></div>
-    <div id="map"></div>
-  </div>
-</div>
 
-<!-- Pin modal -->
-<div class="modal-overlay" id="pinModalOverlay">
-  <div class="modal">
-    <h2>Add stop</h2>
-    <div class="field"><label>Name</label><input type="text" id="pinName" placeholder="e.g. Senso-ji Temple"></div>
-    <div class="field"><label>Day</label><div class="day-colors" id="dayColorPicker"></div></div>
-    <div class="field"><label>Notes (optional)</label><textarea id="pinNotes" placeholder="Opening hours, tips, meeting point..."></textarea></div>
-    <div class="modal-actions">
-      <button class="btn-cancel" id="pinCancel">Cancel</button>
-      <button class="btn-save" id="pinSave">Save pin</button>
-    </div>
-  </div>
-</div>
-
-<!-- Route modal -->
-<div class="modal-overlay" id="routeModalOverlay">
-  <div class="modal">
-    <h2>Route: <span id="routeFromTo"></span></h2>
-    <p class="sub">Works fully offline using a bundled Tokyo rail dataset — type the station name and pick it from the list.</p>
-    <div id="legsContainer"></div>
-    <button class="add-leg-btn" id="addLegBtn">+ Add another leg (transfer)</button>
-    <div class="status-line" id="routeStatus"></div>
-    <div class="modal-actions">
-      <button class="btn-cancel" id="routeCancel">Cancel</button>
-      <button class="btn-save" id="routeSave" disabled>Save route</button>
-    </div>
-  </div>
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script>
-(function(){
-
-// ---- Bundled offline Tokyo rail data: { "Line Name": [{name, lat, lon}, ...in station order] } ----
-// Sourced once from a public Japan railway station dataset and baked in here so the app
-// needs zero live network calls to find routes — everything below runs entirely offline.
-const LINE_DATA = {"JR Joban Line":[{"name":"Ayase","lat":35.762222,"lon":139.825019},{"name":"Kameari","lat":35.766527,"lon":139.847573},{"name":"Kanamachi","lat":35.769582,"lon":139.870482},{"name":"Matsudo","lat":35.784472,"lon":139.900779},{"name":"Kita Matsudo","lat":35.800459,"lon":139.911528},{"name":"Mabashi","lat":35.811682,"lon":139.917305},{"name":"Shim Matsudo","lat":35.825467,"lon":139.921076},{"name":"Kita Kogane","lat":35.833436,"lon":139.931303},{"name":"Minami Kashiwa","lat":35.844655,"lon":139.954111},{"name":"Kashiwa","lat":35.862316,"lon":139.971148},{"name":"Kita Kashiwa","lat":35.875623,"lon":139.988035},{"name":"Abiko","lat":35.87279,"lon":140.010466},{"name":"Tennodai","lat":35.872558,"lon":140.04121},{"name":"Toride","lat":35.89553,"lon":140.063004}],"JR Yamanote Line":[{"name":"Tokyo","lat":35.681391,"lon":139.766103},{"name":"Kanda","lat":35.691173,"lon":139.770641},{"name":"Akihabara","lat":35.698619,"lon":139.773288},{"name":"Okachimachi","lat":35.707282,"lon":139.774727},{"name":"Ueno","lat":35.71379,"lon":139.777043},{"name":"Uguisudani","lat":35.721484,"lon":139.778015},{"name":"Nippori","lat":35.727908,"lon":139.771287},{"name":"Nishi Nippori","lat":35.731954,"lon":139.766857},{"name":"Tabata","lat":35.737781,"lon":139.761229},{"name":"Komagome","lat":35.736825,"lon":139.748053},{"name":"Sugamo","lat":35.733445,"lon":139.739303},{"name":"Otsuka","lat":35.731412,"lon":139.728584},{"name":"Ikebukuro","lat":35.730256,"lon":139.711086},{"name":"Mejiro","lat":35.720476,"lon":139.706228},{"name":"Takadanobaba","lat":35.712677,"lon":139.703715},{"name":"Shin Okubo","lat":35.700875,"lon":139.700261},{"name":"Shinjuku","lat":35.689729,"lon":139.700464},{"name":"Yoyogi","lat":35.683061,"lon":139.702042},{"name":"Harajuku","lat":35.670646,"lon":139.702592},{"name":"Shibuya","lat":35.658871,"lon":139.701238},{"name":"Ebisu","lat":35.646685,"lon":139.71007},{"name":"Meguro","lat":35.633923,"lon":139.715775},{"name":"Gotanda","lat":35.625974,"lon":139.723822},{"name":"Osaki","lat":35.619772,"lon":139.728439},{"name":"Shinagawa","lat":35.62876,"lon":139.738999},{"name":"Tamachi","lat":35.645736,"lon":139.747575},{"name":"Hamamatsucho","lat":35.655391,"lon":139.757135},{"name":"Shimbashi","lat":35.666195,"lon":139.758587},{"name":"Yurakucho","lat":35.675441,"lon":139.763806}],"JR Chuo Line (Rapid)":[{"name":"Tokyo","lat":35.681391,"lon":139.766103},{"name":"Kanda","lat":35.691173,"lon":139.770641},{"name":"Ochanomizu","lat":35.699605,"lon":139.764955},{"name":"Yotsuya","lat":35.686041,"lon":139.730644},{"name":"Shinjuku","lat":35.689729,"lon":139.700464},{"name":"Nakano","lat":35.705765,"lon":139.665835},{"name":"Koenji","lat":35.705326,"lon":139.649664},{"name":"Asagaya","lat":35.704818,"lon":139.635868},{"name":"Ogikubo","lat":35.704523,"lon":139.620109},{"name":"Nishi Ogikubo","lat":35.703842,"lon":139.599361},{"name":"Kichijoji","lat":35.703119,"lon":139.579765},{"name":"Mitaka","lat":35.702683,"lon":139.560325},{"name":"Musashi Sakai","lat":35.702083,"lon":139.543402},{"name":"Higashi Koganei","lat":35.701643,"lon":139.524837},{"name":"Musashi Koganei","lat":35.701337,"lon":139.506483},{"name":"Kokubunji","lat":35.700123,"lon":139.480841},{"name":"Nishi Kokubunji","lat":35.699744,"lon":139.465994},{"name":"Kunitachi","lat":35.69923,"lon":139.44634},{"name":"Tachikawa","lat":35.698202,"lon":139.413704},{"name":"Hino","lat":35.679244,"lon":139.39393},{"name":"Toyoda","lat":35.659502,"lon":139.381495},{"name":"Hachioji","lat":35.655555,"lon":139.338998},{"name":"Nishi Hachioji","lat":35.656621,"lon":139.31264},{"name":"Takao","lat":35.642026,"lon":139.282288}],"JR Sobu Line (Rapid)":[{"name":"Tokyo","lat":35.681391,"lon":139.766103},{"name":"Shin Nihombashi","lat":35.688687,"lon":139.77323},{"name":"Bakurocho","lat":35.693365,"lon":139.78238},{"name":"Kinshicho","lat":35.696802,"lon":139.814136},{"name":"Shin Koiwa","lat":35.716903,"lon":139.857777},{"name":"Ichikawa","lat":35.728903,"lon":139.908142},{"name":"Funabashi","lat":35.701865,"lon":139.984707},{"name":"Tsudanuma","lat":35.691367,"lon":140.020179},{"name":"Inage","lat":35.637264,"lon":140.09256},{"name":"Chiba","lat":35.613425,"lon":140.112837}],"JR Keiyo Line":[{"name":"Tokyo","lat":35.681391,"lon":139.766103},{"name":"Hatchobori","lat":35.674617,"lon":139.777705},{"name":"Etchujima","lat":35.667946,"lon":139.792713},{"name":"Shiomi","lat":35.658702,"lon":139.817341},{"name":"Shin Kiba","lat":35.646172,"lon":139.827402},{"name":"Kasairinkaikoen","lat":35.644392,"lon":139.861529},{"name":"Maihama","lat":35.636115,"lon":139.883714},{"name":"Shin Urayasu","lat":35.649526,"lon":139.912553},{"name":"Ichikawashiohama","lat":35.666554,"lon":139.923684},{"name":"Futamatashimmachi","lat":35.691273,"lon":139.959525},{"name":"Minami Funabashi","lat":35.681804,"lon":139.995773},{"name":"Shin Narashino","lat":35.667342,"lon":140.012825},{"name":"Kaihimmakuhari","lat":35.648373,"lon":140.041917},{"name":"Kemigawahama","lat":35.637291,"lon":140.058888},{"name":"Inagekaigan","lat":35.629501,"lon":140.074034},{"name":"Chibaminato","lat":35.606172,"lon":140.10341}],"JR Keihin-Tohoku Line":[{"name":"Ofuna","lat":35.353466,"lon":139.531127},{"name":"Hongodai","lat":35.36787,"lon":139.550159},{"name":"Konandai","lat":35.375183,"lon":139.576243},{"name":"Yokodai","lat":35.378785,"lon":139.596852},{"name":"Shin Sugita","lat":35.386863,"lon":139.619483},{"name":"Isogo","lat":35.399881,"lon":139.617916},{"name":"Negishi","lat":35.415887,"lon":139.636034},{"name":"Yamate","lat":35.426891,"lon":139.646425},{"name":"Ishikawacho","lat":35.438808,"lon":139.642934},{"name":"Kannai","lat":35.443336,"lon":139.636984},{"name":"Sakuragicho","lat":35.451112,"lon":139.630881},{"name":"Yokohama","lat":35.466195,"lon":139.622704},{"name":"Higashi Kanagawa","lat":35.47804,"lon":139.633466},{"name":"Shin Koyasu","lat":35.487064,"lon":139.654776},{"name":"Tsurumi","lat":35.508387,"lon":139.67614},{"name":"Kawasaki","lat":35.531311,"lon":139.697485},{"name":"Kamata","lat":35.562517,"lon":139.716032},{"name":"Omori","lat":35.588903,"lon":139.728079},{"name":"Oimachi","lat":35.606257,"lon":139.73485},{"name":"Shinagawa","lat":35.62876,"lon":139.738999},{"name":"Tamachi","lat":35.645736,"lon":139.747575},{"name":"Hamamatsucho","lat":35.655391,"lon":139.757135},{"name":"Shimbashi","lat":35.666195,"lon":139.758587},{"name":"Yurakucho","lat":35.675441,"lon":139.763806},{"name":"Tokyo","lat":35.681391,"lon":139.766103},{"name":"Kanda","lat":35.691173,"lon":139.770641},{"name":"Akihabara","lat":35.698619,"lon":139.773288},{"name":"Okachimachi","lat":35.707282,"lon":139.774727},{"name":"Ueno","lat":35.71379,"lon":139.777043},{"name":"Uguisudani","lat":35.721484,"lon":139.778015},{"name":"Nippori","lat":35.727908,"lon":139.771287},{"name":"Nishi Nippori","lat":35.731954,"lon":139.766857},{"name":"Tabata","lat":35.737781,"lon":139.761229},{"name":"Kami Nakazato","lat":35.74728,"lon":139.745769},{"name":"Oji","lat":35.752538,"lon":139.73809},{"name":"Higashi Jujo","lat":35.763803,"lon":139.726858},{"name":"Akabane","lat":35.778026,"lon":139.720928},{"name":"Kawaguchi","lat":35.801869,"lon":139.717472},{"name":"Nishi Kawaguchi","lat":35.815514,"lon":139.704312},{"name":"Warabi","lat":35.827959,"lon":139.690357},{"name":"Minami Urawa","lat":35.847648,"lon":139.669125},{"name":"Urawa","lat":35.858496,"lon":139.657109},{"name":"Kita Urawa","lat":35.872053,"lon":139.645951},{"name":"Yono","lat":35.884393,"lon":139.639085},{"name":"Saitama Shintoshin","lat":35.893867,"lon":139.633587},{"name":"Omiya","lat":35.906439,"lon":139.62405}],"Tokyo Metro Marunouchi Line":[{"name":"Ogikubo","lat":35.704304,"lon":139.620116},{"name":"Minami Asagaya","lat":35.699624,"lon":139.63576},{"name":"Shin Koenji","lat":35.697985,"lon":139.648068},{"name":"Higashi Koenji","lat":35.697802,"lon":139.657822},{"name":"Shin Nakano","lat":35.697491,"lon":139.66903},{"name":"Nakano Sakaue","lat":35.69792,"lon":139.68291},{"name":"Nishi Shinjuku","lat":35.694298,"lon":139.692778},{"name":"Shinjuku","lat":35.69235,"lon":139.700711},{"name":"Shinjuku Sanchome","lat":35.690847,"lon":139.704895},{"name":"Shinjuku Gyoemmae","lat":35.688588,"lon":139.71069},{"name":"Yotsuya Sanchome","lat":35.687958,"lon":139.720103},{"name":"Yotsuya","lat":35.684586,"lon":139.729947},{"name":"Akasaka Mitsuke","lat":35.677021,"lon":139.737047},{"name":"Kokkai Gijidomae","lat":35.67393,"lon":139.745219},{"name":"Kasumigaseki","lat":35.673838,"lon":139.750899},{"name":"Ginza","lat":35.671989,"lon":139.763965},{"name":"Tokyo","lat":35.681753,"lon":139.764708},{"name":"Otemachi","lat":35.686564,"lon":139.7662},{"name":"Awajicho","lat":35.695434,"lon":139.767575},{"name":"Ochanomizu","lat":35.700614,"lon":139.763952},{"name":"Hongo Sanchome","lat":35.706671,"lon":139.759914},{"name":"Korakuen","lat":35.707898,"lon":139.751864},{"name":"Myogadani","lat":35.716989,"lon":139.737184},{"name":"Shin Otsuka","lat":35.72569,"lon":139.729971},{"name":"Ikebukuro","lat":35.730256,"lon":139.711086}],"Tokyo Metro Ginza Line":[{"name":"Shibuya","lat":35.659066,"lon":139.701},{"name":"Omote Sando","lat":35.665247,"lon":139.712314},{"name":"Gaiemmae","lat":35.670527,"lon":139.717857},{"name":"Aoyama Itchome","lat":35.672765,"lon":139.724159},{"name":"Akasaka Mitsuke","lat":35.677021,"lon":139.737047},{"name":"Tameike Sanno","lat":35.673621,"lon":139.741419},{"name":"Toranomon","lat":35.670236,"lon":139.749832},{"name":"Shimbashi","lat":35.667434,"lon":139.758432},{"name":"Ginza","lat":35.671989,"lon":139.763965},{"name":"Kyobashi","lat":35.676856,"lon":139.770126},{"name":"Nihombashi","lat":35.682078,"lon":139.773516},{"name":"Mitsukoshimae","lat":35.687101,"lon":139.773594},{"name":"Kanda","lat":35.693587,"lon":139.770899},{"name":"Suehirocho","lat":35.702972,"lon":139.771713},{"name":"Ueno Hirokoji","lat":35.70768,"lon":139.772877},{"name":"Ueno","lat":35.711482,"lon":139.777122},{"name":"Inaricho","lat":35.711273,"lon":139.782593},{"name":"Tawaramachi","lat":35.709897,"lon":139.790897},{"name":"Asakusa","lat":35.710733,"lon":139.797592}],"Toei Asakusa Line":[{"name":"Nishi Magome","lat":35.586859,"lon":139.705942},{"name":"Magome","lat":35.596435,"lon":139.711772},{"name":"Nakanobu","lat":35.605769,"lon":139.713736},{"name":"Togoshi","lat":35.614633,"lon":139.716495},{"name":"Gotanda","lat":35.627102,"lon":139.724175},{"name":"Takanawadai","lat":35.631679,"lon":139.730305},{"name":"Sengakuji","lat":35.638692,"lon":139.74002},{"name":"Mita","lat":35.64818,"lon":139.748775},{"name":"Daimon","lat":35.656785,"lon":139.75466},{"name":"Shimbashi","lat":35.665577,"lon":139.759451},{"name":"Higashi Ginza","lat":35.669464,"lon":139.767253},{"name":"Takaracho","lat":35.675461,"lon":139.771767},{"name":"Nihombashi","lat":35.681688,"lon":139.775721},{"name":"Ningyocho","lat":35.686307,"lon":139.782285},{"name":"Higashi Nihombashi","lat":35.692126,"lon":139.784821},{"name":"Asakusabashi","lat":35.697451,"lon":139.786305},{"name":"Kuramae","lat":35.703236,"lon":139.790931},{"name":"Asakusa","lat":35.709461,"lon":139.79697},{"name":"Honjo Azumabashi","lat":35.70858,"lon":139.804624},{"name":"Oshiage","lat":35.710702,"lon":139.812935}],"Yurikamome":[{"name":"Shimbashi","lat":35.665503,"lon":139.759644},{"name":"Shiodome","lat":35.662871,"lon":139.759985},{"name":"Takeshiba","lat":35.654099,"lon":139.762037},{"name":"Hinode","lat":35.649136,"lon":139.75906},{"name":"Shibaura Futo","lat":35.641773,"lon":139.757852},{"name":"Odaiba Kaihinkoen","lat":35.629813,"lon":139.778607},{"name":"Daiba","lat":35.625908,"lon":139.771435},{"name":"Fune No Kagakukan","lat":35.621462,"lon":139.773157},{"name":"Telecom Center","lat":35.617593,"lon":139.779327},{"name":"Aomi","lat":35.62467,"lon":139.781132},{"name":"Kokusai Tenjijo Seimon","lat":35.630158,"lon":139.791228},{"name":"Ariake","lat":35.634596,"lon":139.793269},{"name":"Ariake Tennis No Mori","lat":35.639964,"lon":139.78888},{"name":"Shijo Mae","lat":35.645684,"lon":139.78564},{"name":"Shin Toyosu","lat":35.648718,"lon":139.789996},{"name":"Toyosu","lat":35.653792,"lon":139.795414}],"Keikyu Main Line":[{"name":"Sengakuji","lat":35.638692,"lon":139.74002},{"name":"Shinagawa","lat":35.628284,"lon":139.73809},{"name":"Kitashinagawa","lat":35.622458,"lon":139.739191},{"name":"Shimbamba","lat":35.61762,"lon":139.741366},{"name":"Aomono Yokocho","lat":35.609351,"lon":139.742958},{"name":"Samezu","lat":35.604977,"lon":139.742227},{"name":"Tachiaigawa","lat":35.598489,"lon":139.738886},{"name":"Omorikaigan","lat":35.587576,"lon":139.73544},{"name":"Heiwajima","lat":35.57868,"lon":139.73491},{"name":"Omorimachi","lat":35.572431,"lon":139.732027},{"name":"Umeyashiki","lat":35.566873,"lon":139.728266},{"name":"Keikyu Kamata","lat":35.560796,"lon":139.723681},{"name":"Zoshiki","lat":35.549725,"lon":139.715005},{"name":"Rokugodote","lat":35.540577,"lon":139.7076},{"name":"Keikyu Kawasaki","lat":35.53285,"lon":139.700893},{"name":"Hatcho Nawate","lat":35.523054,"lon":139.691346},{"name":"Tsurumi Ichiba","lat":35.517594,"lon":139.68642},{"name":"Keikyu Tsurumi","lat":35.507032,"lon":139.677743},{"name":"Kagetsuen Mae","lat":35.500358,"lon":139.672813},{"name":"Namamugi","lat":35.4956,"lon":139.6673},{"name":"Keikyu Shinkoyasu","lat":35.487242,"lon":139.655848},{"name":"Koyasu","lat":35.484556,"lon":139.644965},{"name":"Kanagawa Shimmachi","lat":35.481559,"lon":139.640152},{"name":"Nakakido","lat":35.477412,"lon":139.634669},{"name":"Kanagawa","lat":35.471304,"lon":139.627364},{"name":"Yokohama","lat":35.466066,"lon":139.623055},{"name":"Tobe","lat":35.456631,"lon":139.61956},{"name":"Hinodecho","lat":35.445524,"lon":139.626696},{"name":"Koganecho","lat":35.439694,"lon":139.62246},{"name":"Minamiota","lat":35.436923,"lon":139.613408},{"name":"Idogaya","lat":35.433895,"lon":139.60061},{"name":"Gumyoji","lat":35.42437,"lon":139.596791},{"name":"Kamiooka","lat":35.409418,"lon":139.596552},{"name":"Byobugaura","lat":35.394176,"lon":139.610387},{"name":"Sugita","lat":35.383796,"lon":139.615734},{"name":"Keikyu Tomioka","lat":35.366743,"lon":139.629772},{"name":"Nokendai","lat":35.360528,"lon":139.629233},{"name":"Kanazawa Bunko","lat":35.342966,"lon":139.621606},{"name":"Kanazawa Hakkei","lat":35.331223,"lon":139.62018},{"name":"Oppama","lat":35.315461,"lon":139.624905},{"name":"Keikyu Taura","lat":35.300892,"lon":139.625252},{"name":"Anjinzuka","lat":35.286641,"lon":139.64292},{"name":"Hemi","lat":35.28048,"lon":139.653149},{"name":"Shioiri","lat":35.280241,"lon":139.662443},{"name":"Yokosuka Chuo","lat":35.27858,"lon":139.670217},{"name":"Kenritsudaigaku","lat":35.269731,"lon":139.677033},{"name":"Horinouchi","lat":35.26322,"lon":139.686932},{"name":"Keikyu Otsu","lat":35.261068,"lon":139.695334},{"name":"Maborikaigan","lat":35.259651,"lon":139.707328},{"name":"Uraga","lat":35.250933,"lon":139.714999}],"Odakyu Line":[{"name":"Shinjuku","lat":35.691435,"lon":139.699574},{"name":"Minami Shinjuku","lat":35.683483,"lon":139.69867},{"name":"Sangubashi","lat":35.678586,"lon":139.693568},{"name":"Yoyogi Hachiman","lat":35.669715,"lon":139.688913},{"name":"Yoyogi Uehara","lat":35.669159,"lon":139.680153},{"name":"Higashi Kitazawa","lat":35.665379,"lon":139.673014},{"name":"Shimo Kitazawa","lat":35.661655,"lon":139.667516},{"name":"Setagaya Daita","lat":35.65834,"lon":139.661557},{"name":"Umegaoka","lat":35.656024,"lon":139.653628},{"name":"Gotokuji","lat":35.653807,"lon":139.647381},{"name":"Kyodo","lat":35.650991,"lon":139.635993},{"name":"Chitose Funabashi","lat":35.647616,"lon":139.624544},{"name":"Soshigaya Okura","lat":35.643236,"lon":139.609659},{"name":"Seijogakuen Mae","lat":35.640114,"lon":139.598958},{"name":"Kitami","lat":35.636697,"lon":139.587445},{"name":"Komae","lat":35.632001,"lon":139.577127},{"name":"Izumi Tamagawa","lat":35.627349,"lon":139.573695},{"name":"Noborito","lat":35.62115,"lon":139.569449},{"name":"Mukogaoka Yuen","lat":35.617273,"lon":139.564719},{"name":"Ikuta","lat":35.614954,"lon":139.542024},{"name":"Yomiuri Land Mae","lat":35.614723,"lon":139.527903},{"name":"Yurigaoka","lat":35.60903,"lon":139.516121},{"name":"Shin Yurigaoka","lat":35.603705,"lon":139.507608},{"name":"Kakio","lat":35.589597,"lon":139.497614},{"name":"Tsurukawa","lat":35.583077,"lon":139.481759},{"name":"Tamagawagakuen Mae","lat":35.563486,"lon":139.463388},{"name":"Machida","lat":35.544222,"lon":139.445236},{"name":"Sagami Ono","lat":35.532208,"lon":139.437836},{"name":"Odakyu Sagamihara","lat":35.515134,"lon":139.422571},{"name":"Sobudai Mae","lat":35.499294,"lon":139.408509},{"name":"Zama","lat":35.480913,"lon":139.399899},{"name":"Ebina","lat":35.452709,"lon":139.390905},{"name":"Atsugi","lat":35.443081,"lon":139.377896},{"name":"Hon Atsugi","lat":35.439338,"lon":139.364261},{"name":"Aiko Ishida","lat":35.417634,"lon":139.344098},{"name":"Isehara","lat":35.396081,"lon":139.313768},{"name":"Tsurumaki Onsen","lat":35.381131,"lon":139.277813},{"name":"Tokaidaigaku Mae","lat":35.373151,"lon":139.271236},{"name":"Hadano","lat":35.370075,"lon":139.226009},{"name":"Shibusawa","lat":35.374032,"lon":139.184405},{"name":"Shin Matsuda","lat":35.345082,"lon":139.139848},{"name":"Kaisei","lat":35.326532,"lon":139.135785},{"name":"Kayama","lat":35.310679,"lon":139.14258},{"name":"Tomizu","lat":35.296759,"lon":139.145166},{"name":"Hotaruda","lat":35.285055,"lon":139.152036},{"name":"Ashigara","lat":35.271763,"lon":139.15447},{"name":"Odawara","lat":35.256229,"lon":139.155396}],"JR Saikyo Line":[{"name":"Osaki","lat":35.619772,"lon":139.728439},{"name":"Ebisu","lat":35.646685,"lon":139.71007},{"name":"Shibuya","lat":35.658871,"lon":139.701238},{"name":"Shinjuku","lat":35.689729,"lon":139.700464},{"name":"Ikebukuro","lat":35.730256,"lon":139.711086},{"name":"Itabashi","lat":35.745435,"lon":139.719507},{"name":"Jujo","lat":35.760321,"lon":139.722233},{"name":"Akabane","lat":35.778026,"lon":139.720928},{"name":"Kita Akabane","lat":35.787007,"lon":139.70569},{"name":"Ukimafunado","lat":35.791209,"lon":139.691341},{"name":"Toda Koen","lat":35.807906,"lon":139.678203},{"name":"Toda","lat":35.817665,"lon":139.669548},{"name":"Kita Toda","lat":35.826883,"lon":139.661201},{"name":"Musashi Urawa","lat":35.845422,"lon":139.646809},{"name":"Naka Urawa","lat":35.853769,"lon":139.6375},{"name":"Minami Yono","lat":35.867456,"lon":139.631117},{"name":"Yono Hommachi","lat":35.880968,"lon":139.626075},{"name":"Kita Yono","lat":35.890678,"lon":139.628521},{"name":"Omiya","lat":35.906439,"lon":139.62405}],"Tokyo Metro Namboku Line":[{"name":"Meguro","lat":35.633272,"lon":139.7155},{"name":"Shirokanedai","lat":35.637917,"lon":139.726133},{"name":"Shirokane Takanawa","lat":35.642903,"lon":139.734104},{"name":"Azabu Juban","lat":35.654682,"lon":139.737051},{"name":"Roppongi Itchome","lat":35.665595,"lon":139.739},{"name":"Tameike Sanno","lat":35.673621,"lon":139.741419},{"name":"Nagatacho","lat":35.678757,"lon":139.740258},{"name":"Yotsuya","lat":35.686032,"lon":139.72955},{"name":"Ichigaya","lat":35.691295,"lon":139.736642},{"name":"Iidabashi","lat":35.701934,"lon":139.743669},{"name":"Korakuen","lat":35.707898,"lon":139.751864},{"name":"Todaimae","lat":35.717633,"lon":139.758025},{"name":"Hon Komagome","lat":35.724155,"lon":139.753828},{"name":"Komagome","lat":35.736959,"lon":139.746442},{"name":"Nishigahara","lat":35.746008,"lon":139.742322},{"name":"Oji","lat":35.753966,"lon":139.737618},{"name":"Oji Kamiya","lat":35.765172,"lon":139.735933},{"name":"Shimo","lat":35.777948,"lon":139.732599},{"name":"Akabane Iwabuchi","lat":35.783417,"lon":139.722103}],"Toei Mita Line":[{"name":"Meguro","lat":35.633272,"lon":139.7155},{"name":"Shirokanedai","lat":35.637917,"lon":139.726133},{"name":"Shirokane Takanawa","lat":35.642903,"lon":139.734104},{"name":"Mita","lat":35.64818,"lon":139.748775},{"name":"Shibakoen","lat":35.654074,"lon":139.749824},{"name":"Onarimon","lat":35.661215,"lon":139.751535},{"name":"Uchisaiwaicho","lat":35.66975,"lon":139.75561},{"name":"Hibiya","lat":35.676036,"lon":139.759998},{"name":"Otemachi","lat":35.684856,"lon":139.762959},{"name":"Jimbocho","lat":35.695492,"lon":139.75812},{"name":"Suidobashi","lat":35.703398,"lon":139.75516},{"name":"Kasuga","lat":35.709598,"lon":139.75325},{"name":"Hakusan","lat":35.721408,"lon":139.752136},{"name":"Sengoku","lat":35.727957,"lon":139.744792},{"name":"Sugamo","lat":35.733502,"lon":139.738519},{"name":"Nishi Sugamo","lat":35.743508,"lon":139.728712},{"name":"Shin Itabashi","lat":35.748785,"lon":139.720101},{"name":"Itabashi Kuyakushomae","lat":35.751284,"lon":139.710102},{"name":"Itabashihoncho","lat":35.761339,"lon":139.705535},{"name":"Motohasunuma","lat":35.768782,"lon":139.702324},{"name":"Shimura Sakaue","lat":35.775725,"lon":139.69538},{"name":"Shimura Sanchome","lat":35.777391,"lon":139.685937},{"name":"Hasune","lat":35.784335,"lon":139.678993},{"name":"Nishidai","lat":35.78699,"lon":139.673971},{"name":"Takashimadaira","lat":35.789056,"lon":139.661216},{"name":"Shin Takashimadaira","lat":35.790189,"lon":139.654275},{"name":"Nishi Takashimadaira","lat":35.791833,"lon":139.64594}],"Tokyo Metro Hibiya Line":[{"name":"Naka Meguro","lat":35.643854,"lon":139.698621},{"name":"Ebisu","lat":35.647332,"lon":139.708988},{"name":"Hiro O","lat":35.652279,"lon":139.722202},{"name":"Roppongi","lat":35.662836,"lon":139.731443},{"name":"Kamiyacho","lat":35.662978,"lon":139.745069},{"name":"Kasumigaseki","lat":35.673838,"lon":139.750899},{"name":"Hibiya","lat":35.67459,"lon":139.76017},{"name":"Ginza","lat":35.671989,"lon":139.763965},{"name":"Higashi Ginza","lat":35.669464,"lon":139.767253},{"name":"Tsukiji","lat":35.668115,"lon":139.772603},{"name":"Hatchobori","lat":35.674851,"lon":139.776982},{"name":"Kayabacho","lat":35.679752,"lon":139.780005},{"name":"Ningyocho","lat":35.686307,"lon":139.782285},{"name":"Kodemmacho","lat":35.690737,"lon":139.778433},{"name":"Akihabara","lat":35.698162,"lon":139.775459},{"name":"Naka Okachimachi","lat":35.706649,"lon":139.776138},{"name":"Ueno","lat":35.711482,"lon":139.777122},{"name":"Iriya","lat":35.719862,"lon":139.783924},{"name":"Minowa","lat":35.729623,"lon":139.791485},{"name":"Minami Senju","lat":35.733398,"lon":139.799273},{"name":"Kita Senju","lat":35.748916,"lon":139.804276}],"Tokyo Metro Hanzomon Line":[{"name":"Shibuya","lat":35.659066,"lon":139.701},{"name":"Omote Sando","lat":35.665247,"lon":139.712314},{"name":"Aoyama Itchome","lat":35.672765,"lon":139.724159},{"name":"Nagatacho","lat":35.678757,"lon":139.740258},{"name":"Hanzomon","lat":35.685703,"lon":139.74163},{"name":"Kudanshita","lat":35.695589,"lon":139.751948},{"name":"Jimbocho","lat":35.695966,"lon":139.757606},{"name":"Otemachi","lat":35.68686,"lon":139.764107},{"name":"Mitsukoshimae","lat":35.684908,"lon":139.773147},{"name":"Suitengumae","lat":35.682683,"lon":139.785377},{"name":"Kiyosumi Shirakawa","lat":35.682105,"lon":139.798851},{"name":"Sumiyoshi","lat":35.689073,"lon":139.815681},{"name":"Kinshicho","lat":35.697578,"lon":139.814941},{"name":"Oshiage","lat":35.710702,"lon":139.812935}],"Tokyo Metro Fukutoshin Line":[{"name":"Wakoshi","lat":35.788507,"lon":139.612434},{"name":"Chikatetsu Narimasu","lat":35.776557,"lon":139.631497},{"name":"Chikatetsu Akatsuka","lat":35.769939,"lon":139.644021},{"name":"Heiwadai","lat":35.757863,"lon":139.653762},{"name":"Hikawadai","lat":35.74955,"lon":139.665567},{"name":"Kotake Mukaihara","lat":35.743803,"lon":139.678572},{"name":"Senkawa","lat":35.738229,"lon":139.689271},{"name":"Kanamecho","lat":35.73323,"lon":139.698715},{"name":"Ikebukuro","lat":35.731464,"lon":139.708291},{"name":"Zoshigaya","lat":35.720233,"lon":139.714795},{"name":"Nishi Waseda","lat":35.708242,"lon":139.709101},{"name":"Higashi Shinjuku","lat":35.698915,"lon":139.707593},{"name":"Shinjuku Sanchome","lat":35.690853,"lon":139.704828},{"name":"Kita Sando","lat":35.678459,"lon":139.705453},{"name":"Meiji Jingumae","lat":35.668497,"lon":139.705367},{"name":"Shibuya","lat":35.659545,"lon":139.702417}],"Tokyo Metro Chiyoda Line":[{"name":"Yoyogi Uehara","lat":35.669159,"lon":139.680153},{"name":"Yoyogi Koen","lat":35.669187,"lon":139.689099},{"name":"Meiji Jingumae","lat":35.669071,"lon":139.703995},{"name":"Omote Sando","lat":35.665247,"lon":139.712314},{"name":"Nogizaka","lat":35.666572,"lon":139.726215},{"name":"Akasaka","lat":35.67323,"lon":139.738348},{"name":"Kokkai Gijidomae","lat":35.67393,"lon":139.745219},{"name":"Kasumigaseki","lat":35.673838,"lon":139.750899},{"name":"Hibiya","lat":35.674241,"lon":139.758732},{"name":"Nijubashimae","lat":35.681071,"lon":139.761948},{"name":"Otemachi","lat":35.686154,"lon":139.763399},{"name":"Shin Ochanomizu","lat":35.698072,"lon":139.766014},{"name":"Yushima","lat":35.708243,"lon":139.769916},{"name":"Nezu","lat":35.7174,"lon":139.765655},{"name":"Sendagi","lat":35.725549,"lon":139.763243},{"name":"Nishi Nippori","lat":35.732257,"lon":139.766511},{"name":"Machiya","lat":35.742733,"lon":139.780501},{"name":"Kita Senju","lat":35.748916,"lon":139.804276},{"name":"Ayase","lat":35.762222,"lon":139.825019},{"name":"Kita Ayase","lat":35.777117,"lon":139.832035}],"JR Chuo-Sobu Line":[{"name":"Mitaka","lat":35.702683,"lon":139.560325},{"name":"Kichijoji","lat":35.703119,"lon":139.579765},{"name":"Nishi Ogikubo","lat":35.703842,"lon":139.599361},{"name":"Ogikubo","lat":35.704523,"lon":139.620109},{"name":"Asagaya","lat":35.704818,"lon":139.635868},{"name":"Koenji","lat":35.705326,"lon":139.649664},{"name":"Nakano","lat":35.705765,"lon":139.665835},{"name":"Higashi Nakano","lat":35.706529,"lon":139.684436},{"name":"Okubo","lat":35.700784,"lon":139.69732},{"name":"Shinjuku","lat":35.689729,"lon":139.700464},{"name":"Yoyogi","lat":35.683061,"lon":139.702042},{"name":"Sendagaya","lat":35.681231,"lon":139.711644},{"name":"Shinanomachi","lat":35.680031,"lon":139.720729},{"name":"Yotsuya","lat":35.686041,"lon":139.730644},{"name":"Ichigaya","lat":35.691105,"lon":139.735241},{"name":"Iidabashi","lat":35.701835,"lon":139.745143},{"name":"Suidobashi","lat":35.702039,"lon":139.754312},{"name":"Ochanomizu","lat":35.699605,"lon":139.764955},{"name":"Akihabara","lat":35.698619,"lon":139.773288},{"name":"Asakusabashi","lat":35.697403,"lon":139.784427},{"name":"Ryogoku","lat":35.69579,"lon":139.793334},{"name":"Kinshicho","lat":35.696802,"lon":139.814136},{"name":"Kameido","lat":35.697345,"lon":139.826262},{"name":"Hirai","lat":35.70643,"lon":139.842181},{"name":"Shin Koiwa","lat":35.716903,"lon":139.857777},{"name":"Koiwa","lat":35.733207,"lon":139.881755},{"name":"Ichikawa","lat":35.728903,"lon":139.908142},{"name":"Moto Yawata","lat":35.720898,"lon":139.92741},{"name":"Shimosa Nakayama","lat":35.714276,"lon":139.943092},{"name":"Nishi Funabashi","lat":35.707283,"lon":139.959536},{"name":"Funabashi","lat":35.701865,"lon":139.984707},{"name":"Higashi Funabashi","lat":35.699811,"lon":140.00393},{"name":"Tsudanuma","lat":35.691367,"lon":140.020179},{"name":"Makuharihongo","lat":35.672664,"lon":140.042241},{"name":"Makuhari","lat":35.6594,"lon":140.057899},{"name":"Shin Kemigawa","lat":35.65169,"lon":140.073025},{"name":"Inage","lat":35.637264,"lon":140.09256},{"name":"Nishi Chiba","lat":35.622639,"lon":140.103337},{"name":"Chiba","lat":35.613425,"lon":140.112837}],"Toei Oedo Line":[{"name":"Shinjuku Nishiguchi","lat":35.693315,"lon":139.699155},{"name":"Higashi Shinjuku","lat":35.69792,"lon":139.707549},{"name":"Wakamatsu Kawada","lat":35.699218,"lon":139.718184},{"name":"Ushigome Yanagicho","lat":35.699518,"lon":139.725027},{"name":"Ushigome Kagurazaka","lat":35.700851,"lon":139.735802},{"name":"Iidabashi","lat":35.702927,"lon":139.744999},{"name":"Kasuga","lat":35.709598,"lon":139.75325},{"name":"Hongo Sanchome","lat":35.707462,"lon":139.760095},{"name":"Ueno Okachimachi","lat":35.707893,"lon":139.774332},{"name":"Shin Okachimachi","lat":35.707045,"lon":139.781958},{"name":"Kuramae","lat":35.703236,"lon":139.790931},{"name":"Ryogoku","lat":35.696881,"lon":139.797421},{"name":"Morishita","lat":35.68796,"lon":139.797042},{"name":"Kiyosumi Shirakawa","lat":35.682105,"lon":139.798851},{"name":"Monzen Nakacho","lat":35.671851,"lon":139.796209},{"name":"Tsukishima","lat":35.664871,"lon":139.784233},{"name":"Kachidoki","lat":35.658507,"lon":139.776442},{"name":"Tsukijishijo","lat":35.664895,"lon":139.766915},{"name":"Shiodome","lat":35.663703,"lon":139.760642},{"name":"Daimon","lat":35.656785,"lon":139.75466},{"name":"Akabanebashi","lat":35.655007,"lon":139.743642},{"name":"Azabu Juban","lat":35.656503,"lon":139.736116},{"name":"Roppongi","lat":35.663921,"lon":139.731567},{"name":"Aoyama Itchome","lat":35.672929,"lon":139.72396},{"name":"Kokuritsu Kyogijo","lat":35.679831,"lon":139.714932},{"name":"Yoyogi","lat":35.683218,"lon":139.701666},{"name":"Shinjuku","lat":35.68869,"lon":139.698812},{"name":"Tochomae","lat":35.690551,"lon":139.69257},{"name":"Nishi Shinjuku Gochome","lat":35.689798,"lon":139.684304},{"name":"Nakano Sakaue","lat":35.69709,"lon":139.682279},{"name":"Higashi Nakano","lat":35.706891,"lon":139.682987},{"name":"Nakai","lat":35.714035,"lon":139.686356},{"name":"Ochiai Minami Nagasaki","lat":35.723608,"lon":139.683303},{"name":"Shin Egota","lat":35.732538,"lon":139.670653},{"name":"Nerima","lat":35.737404,"lon":139.65477},{"name":"Toshimaen","lat":35.742067,"lon":139.64911},{"name":"Nerima Kasugacho","lat":35.751452,"lon":139.640236},{"name":"Hikarigaoka","lat":35.758526,"lon":139.628603}],"Keio Line":[{"name":"Shinjuku","lat":35.690163,"lon":139.699187},{"name":"Sasazuka","lat":35.673758,"lon":139.667251},{"name":"Daitabashi","lat":35.671092,"lon":139.659413},{"name":"Meidaimae","lat":35.668758,"lon":139.650352},{"name":"Shimo Takaido","lat":35.66615,"lon":139.641372},{"name":"Sakurajosui","lat":35.66768,"lon":139.63129},{"name":"Kami Kitazawa","lat":35.668857,"lon":139.62329},{"name":"Hachiman Yama","lat":35.669982,"lon":139.614927},{"name":"Roka Koen","lat":35.670479,"lon":139.608247},{"name":"Chitose Karasuyama","lat":35.667921,"lon":139.60067},{"name":"Sengawa","lat":35.662257,"lon":139.584908},{"name":"Tsutsujigaoka","lat":35.657936,"lon":139.575103},{"name":"Shibasaki","lat":35.653997,"lon":139.56658},{"name":"Kokuryo","lat":35.650087,"lon":139.558036},{"name":"Fuda","lat":35.649904,"lon":139.551557},{"name":"Chofu","lat":35.652181,"lon":139.543988},{"name":"Nishi Chofu","lat":35.657169,"lon":139.529822},{"name":"Tobitakyu","lat":35.660121,"lon":139.523666},{"name":"Musashinodai","lat":35.664159,"lon":139.511289},{"name":"Tama Reien","lat":35.666197,"lon":139.502615},{"name":"Higashi Fuchu","lat":35.668766,"lon":139.495257},{"name":"Fuchu","lat":35.672245,"lon":139.4799},{"name":"Bubaigawara","lat":35.668493,"lon":139.468798},{"name":"Nakagawara","lat":35.659549,"lon":139.457602},{"name":"Seiseki Sakuragaoka","lat":35.650814,"lon":139.446979},{"name":"Mogusaen","lat":35.657362,"lon":139.431285},{"name":"Takahatafudo","lat":35.662361,"lon":139.412953},{"name":"Minamidaira","lat":35.654559,"lon":139.392008},{"name":"Hirayamajoshi Koen","lat":35.647371,"lon":139.379926},{"name":"Naganuma","lat":35.642788,"lon":139.365849},{"name":"Kitano","lat":35.644479,"lon":139.354489},{"name":"Keio Hachioji","lat":35.657416,"lon":139.343851}],"Toei Shinjuku Line":[{"name":"Shinjuku","lat":35.68869,"lon":139.698812},{"name":"Shinjuku Sanchome","lat":35.690616,"lon":139.706271},{"name":"Akebonobashi","lat":35.692402,"lon":139.722881},{"name":"Ichigaya","lat":35.692594,"lon":139.735794},{"name":"Kudanshita","lat":35.695589,"lon":139.751948},{"name":"Jimbocho","lat":35.695966,"lon":139.757606},{"name":"Ogawamachi","lat":35.695487,"lon":139.767551},{"name":"Iwamotocho","lat":35.695534,"lon":139.775866},{"name":"Bakuro Yokoyama","lat":35.69212,"lon":139.782768},{"name":"Hamacho","lat":35.688516,"lon":139.788154},{"name":"Morishita","lat":35.68796,"lon":139.797042},{"name":"Kikukawa","lat":35.688379,"lon":139.806016},{"name":"Sumiyoshi","lat":35.689073,"lon":139.815681},{"name":"Nishi Ojima","lat":35.689349,"lon":139.826206},{"name":"Ojima","lat":35.689905,"lon":139.83565},{"name":"Higashi Ojima","lat":35.690355,"lon":139.845963},{"name":"Funabori","lat":35.683795,"lon":139.864258},{"name":"Ichinoe","lat":35.686055,"lon":139.882934},{"name":"Mizue","lat":35.693318,"lon":139.89761},{"name":"Shinozaki","lat":35.706017,"lon":139.903698},{"name":"Motoyawata","lat":35.722929,"lon":139.926628}],"Tokyo Metro Tozai Line":[{"name":"Nakano","lat":35.705765,"lon":139.665835},{"name":"Ochiai","lat":35.710976,"lon":139.687284},{"name":"Takadanobaba","lat":35.713338,"lon":139.704745},{"name":"Waseda","lat":35.705723,"lon":139.721319},{"name":"Kagurazaka","lat":35.70379,"lon":139.734546},{"name":"Iidabashi","lat":35.701725,"lon":139.745986},{"name":"Kudanshita","lat":35.695589,"lon":139.751948},{"name":"Takebashi","lat":35.690662,"lon":139.756817},{"name":"Otemachi","lat":35.684801,"lon":139.766086},{"name":"Nihombashi","lat":35.682078,"lon":139.773516},{"name":"Kayabacho","lat":35.679752,"lon":139.780005},{"name":"Monzen Nakacho","lat":35.671851,"lon":139.796209},{"name":"Kiba","lat":35.669351,"lon":139.807042},{"name":"Toyocho","lat":35.669629,"lon":139.817596},{"name":"Minami Sunamachi","lat":35.668796,"lon":139.83065},{"name":"Nishi Kasai","lat":35.664631,"lon":139.859259},{"name":"Kasai","lat":35.663554,"lon":139.872458},{"name":"Urayasu","lat":35.665932,"lon":139.893193},{"name":"Minami Gyotoku","lat":35.672687,"lon":139.902311},{"name":"Gyotoku","lat":35.682686,"lon":139.914254},{"name":"Myoden","lat":35.690935,"lon":139.924209},{"name":"Baraki Nakayama","lat":35.703517,"lon":139.942029},{"name":"Nishi Funabashi","lat":35.707127,"lon":139.958972}],"Tokyo Metro Yurakucho Line":[{"name":"Wakoshi","lat":35.788507,"lon":139.612434},{"name":"Chikatetsu Narimasu","lat":35.776557,"lon":139.631497},{"name":"Chikatetsu Akatsuka","lat":35.769939,"lon":139.644021},{"name":"Heiwadai","lat":35.757863,"lon":139.653762},{"name":"Hikawadai","lat":35.74955,"lon":139.665567},{"name":"Kotake Mukaihara","lat":35.743803,"lon":139.678572},{"name":"Senkawa","lat":35.738229,"lon":139.689271},{"name":"Kanamecho","lat":35.73323,"lon":139.698715},{"name":"Ikebukuro","lat":35.729565,"lon":139.710088},{"name":"Higashi Ikebukuro","lat":35.725732,"lon":139.719546},{"name":"Gokokuji","lat":35.719044,"lon":139.72754},{"name":"Edogawabashi","lat":35.709495,"lon":139.733538},{"name":"Iidabashi","lat":35.701934,"lon":139.743669},{"name":"Ichigaya","lat":35.691958,"lon":139.73647},{"name":"Kojimachi","lat":35.684006,"lon":139.737613},{"name":"Nagatacho","lat":35.678757,"lon":139.740258},{"name":"Sakuradamon","lat":35.677405,"lon":139.75149},{"name":"Yurakucho","lat":35.675714,"lon":139.763265},{"name":"Ginza Itchome","lat":35.67435,"lon":139.767045},{"name":"Shintomicho","lat":35.670462,"lon":139.773711},{"name":"Tsukishima","lat":35.664871,"lon":139.784233},{"name":"Toyosu","lat":35.654908,"lon":139.79621},{"name":"Tatsumi","lat":35.645576,"lon":139.81052},{"name":"Shin Kiba","lat":35.645832,"lon":139.826254}],"Keisei Main Line":[{"name":"Keisei Ueno","lat":35.711232,"lon":139.773571},{"name":"Nippori","lat":35.727908,"lon":139.771287},{"name":"Shim Mikawashima","lat":35.73714,"lon":139.773834},{"name":"Machiya","lat":35.742354,"lon":139.781499},{"name":"Senjuohashi","lat":35.74243,"lon":139.796934},{"name":"Keisei Sekiya","lat":35.744008,"lon":139.81183},{"name":"Horikirishobuen","lat":35.747649,"lon":139.827545},{"name":"Ohanajaya","lat":35.747585,"lon":139.83988},{"name":"Aoto","lat":35.745883,"lon":139.856292},{"name":"Keisei Takasago","lat":35.750932,"lon":139.866875},{"name":"Keisei Koiwa","lat":35.742158,"lon":139.88371},{"name":"Edogawa","lat":35.737723,"lon":139.896226},{"name":"Konodai","lat":35.736301,"lon":139.90322},{"name":"Ichikawamama","lat":35.73121,"lon":139.911717},{"name":"Sugano","lat":35.728272,"lon":139.919413},{"name":"Keisei Yawata","lat":35.723811,"lon":139.92816},{"name":"Onigoe","lat":35.719776,"lon":139.937932},{"name":"Keisei Nakayama","lat":35.716998,"lon":139.944203},{"name":"Higashi Nakayama","lat":35.714385,"lon":139.952683},{"name":"Keisei Nishifuna","lat":35.711627,"lon":139.958863},{"name":"Kaijin","lat":35.705888,"lon":139.971888},{"name":"Keisei Funabashi","lat":35.700161,"lon":139.985451},{"name":"Daijingushita","lat":35.693945,"lon":139.991431},{"name":"Funabashikeibajo","lat":35.689606,"lon":139.997998},{"name":"Yatsu","lat":35.685257,"lon":140.007658},{"name":"Keisei Tsudanuma","lat":35.68364,"lon":140.024823},{"name":"Keisei Okubo","lat":35.686016,"lon":140.048629},{"name":"Mimomi","lat":35.686852,"lon":140.068289},{"name":"Yachiyodai","lat":35.701465,"lon":140.090942},{"name":"Keisei Owada","lat":35.712309,"lon":140.108578},{"name":"Katsutadai","lat":35.715445,"lon":140.126053},{"name":"Shizu","lat":35.717406,"lon":140.144982},{"name":"Yukarigaoka","lat":35.721801,"lon":140.156354},{"name":"Keisei Usui","lat":35.730017,"lon":140.180796},{"name":"Keisei Sakura","lat":35.725205,"lon":140.229633},{"name":"Osakura","lat":35.729908,"lon":140.25079},{"name":"Keisei Shisui","lat":35.736867,"lon":140.270132},{"name":"Sogosando","lat":35.752669,"lon":140.280975},{"name":"Kozunomori","lat":35.760446,"lon":140.294904},{"name":"Keisei Narita","lat":35.776308,"lon":140.315473},{"name":"Narita Airport Terminal2and3","lat":35.773693,"lon":140.387163},{"name":"Narita Airport Terminal1","lat":35.763983,"lon":140.384644}]};
-
-const LINE_COLOR_HINTS = [
-  ["Yamanote", "#9acd32"],["Chuo-Sobu", "#ffd400"],["Chuo", "#f15a22"],["Keihin-Tohoku", "#00b2e5"],
-  ["Saikyo", "#00ac9a"],["Sobu", "#ffd400"],["Joban", "#00b261"],["Keiyo", "#c9c22c"],["Ginza", "#ff9500"],
-  ["Marunouchi", "#f62e36"],["Hibiya", "#b5b5ac"],["Tozai", "#009bbf"],["Chiyoda", "#00a650"],
-  ["Yurakucho", "#c1a470"],["Hanzomon", "#8f76d6"],["Namboku", "#00ada9"],["Fukutoshin", "#9c5e31"],
-  ["Asakusa", "#e85298"],["Mita", "#0079c2"],["Shinjuku", "#6cbb5a"],["Oedo", "#b6007a"],
-  ["Keio", "#dd1f5e"],["Odakyu", "#1e50a2"],["Keisei", "#0d59a4"],["Keikyu", "#00509e"],["Yurikamome", "#7ac143"]
-];
-function colorForLine(name){
-  const hit = LINE_COLOR_HINTS.find(([k]) => name.includes(k));
-  return hit ? hit[1] : '#446688';
-}
-const DAY_PALETTE = ["#c0392b","#1e6091","#2e8b57","#b8860b","#7d3c98","#c2185b","#00838f","#5d4037"];
-
-// Flat index: lowercased station name -> [{line, index}], for fast lookup while typing.
-const STATION_INDEX = {};
-Object.keys(LINE_DATA).forEach(line=>{
-  LINE_DATA[line].forEach((st, idx)=>{
-    const key = st.name.toLowerCase();
-    (STATION_INDEX[key] = STATION_INDEX[key] || []).push({line, idx});
-  });
-});
-const ALL_STATION_NAMES = Array.from(new Set(Object.keys(STATION_INDEX))).sort();
-
-function searchStations(query){
-  const q = query.trim().toLowerCase();
-  if(!q) return [];
-  const starts = ALL_STATION_NAMES.filter(n => n.startsWith(q));
-  const contains = ALL_STATION_NAMES.filter(n => !n.startsWith(q) && n.includes(q));
-  return [...starts, ...contains].slice(0, 8);
-}
-
-let pins = [], routes = [], markers = {}, polylineGroups = {};
-let mode = null, routeSelection = [];
-let editingPinCoords = null, highlightedLine = null;
-
-const map = L.map('map', {zoomControl:true}).setView([35.6812,139.7671], 13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom:19, attribution:'&copy; OpenStreetMap contributors'
-}).addTo(map);
-
-const hintBanner = document.getElementById('hintBanner');
-function showHint(text){ hintBanner.textContent = text; hintBanner.style.display='block'; }
-function hideHint(){ hintBanner.style.display='none'; }
-
-function loadData(){
-  try{
-    const raw = localStorage.getItem('tokyo-itinerary-data');
-    if(raw){ const p = JSON.parse(raw); pins = p.pins || []; routes = p.routes || []; }
-  }catch(e){}
-  renderAll();
-}
-function saveData(){
-  try{ localStorage.setItem('tokyo-itinerary-data', JSON.stringify({pins,routes})); }catch(e){ console.error('save failed', e); }
-}
-
-function dayColor(day){ const n = parseInt(day,10) || 1; return DAY_PALETTE[(n-1) % DAY_PALETTE.length]; }
-function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function escapeAttr(s){ return escapeHtml(s).replace(/"/g,'&quot;'); }
-
-function renderAll(){ renderMarkers(); renderRoutes(); renderSidebar(); renderLegend(); }
-
-function renderMarkers(){
-  Object.values(markers).forEach(m => map.removeLayer(m));
-  markers = {};
-  pins.forEach(p=>{
-    const color = dayColor(p.day);
-    const icon = L.divIcon({
-      className:'',
-      html:`<div style="display:flex;flex-direction:column;align-items:center;">
-              <div class="pin-dot" style="width:16px;height:16px;background:${color};"></div>
-              <div class="pin-label" style="margin-top:2px;">${escapeHtml(p.name)}</div>
-            </div>`,
-      iconSize:[0,0], iconAnchor:[8,8]
-    });
-    const marker = L.marker([p.lat,p.lng], {icon}).addTo(map);
-    marker.on('click', ()=> onPinClicked(p.id));
-    markers[p.id] = marker;
-  });
-}
-
-function renderRoutes(){
-  Object.values(polylineGroups).flat().forEach(pl => map.removeLayer(pl));
-  polylineGroups = {};
-  routes.forEach(r=>{
-    const group = [];
-    r.legs.forEach(leg=>{
-      const dimmed = highlightedLine && highlightedLine !== leg.line;
-      const pl = L.polyline(leg.coords, {
-        color: leg.color,
-        weight: highlightedLine === leg.line ? 6 : 4,
-        opacity: dimmed ? 0.15 : 0.9,
-        dashArray: leg.approx ? '2,8' : null
-      }).addTo(map);
-      pl.bindPopup(`<b>${escapeHtml(leg.line)}</b><br>${escapeHtml(leg.from)} → ${escapeHtml(leg.to)}${leg.approx ? '<br><i style="color:#999">approximate path</i>':''}`);
-      group.push(pl);
-    });
-    polylineGroups[r.id] = group;
-  });
-}
-
-function renderSidebar(){
-  const el = document.getElementById('stopList');
-  if(pins.length === 0){
-    el.innerHTML = `<div class="empty-hint">No stops yet. Tap <b>+ Pin</b>, then click anywhere on the map to drop your first stop.</div>`;
-    return;
-  }
-  const byDay = {};
-  pins.forEach(p=>{ const d = p.day || 1; (byDay[d] = byDay[d] || []).push(p); });
-  const days = Object.keys(byDay).sort((a,b)=>a-b);
-  el.innerHTML = days.map(d=>{
-    const stops = byDay[d].map(p=>`
-      <div class="stop-card" data-id="${p.id}">
-        <button class="stop-del" data-id="${p.id}">✕</button>
-        <div class="stop-name">${escapeHtml(p.name)}</div>
-        ${p.notes ? `<div class="stop-notes">${escapeHtml(p.notes)}</div>` : ''}
-      </div>`).join('');
-    return `<div class="day-group">
-      <div class="day-title"><span class="day-dot" style="background:${dayColor(d)}"></span>Day ${d}</div>
-      ${stops}
-    </div>`;
-  }).join('');
-  el.querySelectorAll('.stop-card').forEach(card=>{
-    card.addEventListener('click', (e)=>{
-      if(e.target.classList.contains('stop-del')) return;
-      const id = card.dataset.id, p = pins.find(x=>x.id===id);
-      if(p){ map.setView([p.lat,p.lng], 15); markers[id].openPopup && markers[id].openPopup(); }
-    });
-  });
-  el.querySelectorAll('.stop-del').forEach(btn=>{
-    btn.addEventListener('click', (e)=>{ e.stopPropagation(); deletePin(btn.dataset.id); });
-  });
-}
-
-function renderLegend(){
-  const usedLines = {};
-  routes.forEach(r=> r.legs.forEach(leg=>{ usedLines[leg.line] = leg.color; }));
-  const el = document.getElementById('legendItems');
-  const names = Object.keys(usedLines);
-  if(names.length===0){
-    el.innerHTML = `<div style="font-size:12px;color:var(--ink-soft);">Add a route to see lines here.</div>`;
-    document.getElementById('legendClear').style.display='none';
-    return;
-  }
-  el.innerHTML = names.map(name=>`
-    <div class="legend-item ${highlightedLine && highlightedLine!==name ? 'dimmed':''}" data-line="${escapeAttr(name)}">
-      <span class="legend-swatch" style="background:${usedLines[name]}"></span>${escapeHtml(name)}
-    </div>`).join('');
-  el.querySelectorAll('.legend-item').forEach(item=>{
-    item.addEventListener('click', ()=>{
-      const line = item.dataset.line;
-      highlightedLine = (highlightedLine === line) ? null : line;
-      renderRoutes(); renderLegend();
-      document.getElementById('legendClear').style.display = highlightedLine ? 'block' : 'none';
-    });
-  });
-  document.getElementById('legendClear').style.display = highlightedLine ? 'block' : 'none';
-}
-document.getElementById('legendClear').addEventListener('click', ()=>{ highlightedLine = null; renderRoutes(); renderLegend(); });
-
-// ---------------- Mode toggles ----------------
-const btnAddPin = document.getElementById('btnAddPin');
-const btnAddRoute = document.getElementById('btnAddRoute');
-btnAddPin.addEventListener('click', ()=> setMode(mode==='pin' ? null : 'pin'));
-btnAddRoute.addEventListener('click', ()=> setMode(mode==='route' ? null : 'route'));
-
-function setMode(m){
-  mode = m; routeSelection = [];
-  btnAddPin.classList.toggle('active', m==='pin');
-  btnAddRoute.classList.toggle('active', m==='route');
-  if(m==='pin') showHint('Tap anywhere on the map to drop a pin');
-  else if(m==='route') showHint('Tap your first stop, then your second stop');
-  else hideHint();
-}
-
-map.on('click', (e)=>{ if(mode==='pin'){ editingPinCoords = e.latlng; openPinModal(); } });
-
-function onPinClicked(id){
-  if(mode==='route'){
-    if(!routeSelection.includes(id)) routeSelection.push(id);
-    if(routeSelection.length===1){
-      const p = pins.find(x=>x.id===id);
-      showHint(`"${p.name}" selected — now tap the second stop`);
-    } else if(routeSelection.length===2){
-      openRouteModal(routeSelection[0], routeSelection[1]);
-      setMode(null);
-    }
-  } else {
-    const p = pins.find(x=>x.id===id);
-    if(p) markers[id].openPopup && markers[id].openPopup();
-  }
-}
-
-// ---------------- Pin modal ----------------
-const pinModalOverlay = document.getElementById('pinModalOverlay');
-const dayColorPicker = document.getElementById('dayColorPicker');
-let selectedDay = 1;
-
-function buildDayPicker(){
-  dayColorPicker.innerHTML = '';
-  for(let d=1; d<=8; d++){
-    const sw = document.createElement('div');
-    sw.className = 'day-swatch' + (d===selectedDay ? ' selected':'');
-    sw.style.background = dayColor(d); sw.textContent = d;
-    sw.addEventListener('click', ()=>{ selectedDay = d; buildDayPicker(); });
-    dayColorPicker.appendChild(sw);
-  }
-}
-function openPinModal(){
-  document.getElementById('pinName').value = '';
-  document.getElementById('pinNotes').value = '';
-  selectedDay = (pins.length ? (pins[pins.length-1].day||1) : 1);
-  buildDayPicker();
-  pinModalOverlay.classList.add('open');
-  setTimeout(()=>document.getElementById('pinName').focus(), 50);
-}
-document.getElementById('pinCancel').addEventListener('click', ()=>{ pinModalOverlay.classList.remove('open'); setMode(null); });
-document.getElementById('pinSave').addEventListener('click', ()=>{
-  const name = document.getElementById('pinName').value.trim();
-  if(!name){ document.getElementById('pinName').focus(); return; }
-  const notes = document.getElementById('pinNotes').value.trim();
-  pins.push({ id:'p'+Date.now()+Math.random().toString(36).slice(2,6), name, notes, day:selectedDay, lat:editingPinCoords.lat, lng:editingPinCoords.lng });
-  pinModalOverlay.classList.remove('open');
-  saveData(); renderAll(); setMode(null);
-});
-function deletePin(id){
-  pins = pins.filter(p=>p.id!==id);
-  routes = routes.filter(r=> r.fromId!==id && r.toId!==id);
-  saveData(); renderAll();
-}
-
-// ---------------- Route modal (offline lookup) ----------------
-const routeModalOverlay = document.getElementById('routeModalOverlay');
-const legsContainer = document.getElementById('legsContainer');
-const routeSaveBtn = document.getElementById('routeSave');
-let currentLegs = [];
-let routeFromId = null, routeToId = null;
-
-function openRouteModal(fromId, toId){
-  routeFromId = fromId; routeToId = toId;
-  const fromP = pins.find(p=>p.id===fromId), toP = pins.find(p=>p.id===toId);
-  document.getElementById('routeFromTo').textContent = `${fromP.name} → ${toP.name}`;
-  // Pre-fill with the pin names only if they actually match a known station; otherwise leave blank
-  // so the person types the real station name themselves.
-  const fromGuess = STATION_INDEX[fromP.name.toLowerCase()] ? fromP.name : '';
-  const toGuess = STATION_INDEX[toP.name.toLowerCase()] ? toP.name : '';
-  currentLegs = [{ from: fromGuess, to: toGuess, line:null, color:null, coords:null, approx:false, status:'idle' }];
-  routeSaveBtn.disabled = true;
-  renderLegs();
-  routeModalOverlay.classList.add('open');
-}
-document.getElementById('routeCancel').addEventListener('click', ()=>{ routeModalOverlay.classList.remove('open'); });
-document.getElementById('addLegBtn').addEventListener('click', ()=>{
-  const last = currentLegs[currentLegs.length-1];
-  currentLegs.push({ from: last ? last.to : '', to:'', line:null, color:null, coords:null, approx:false, status:'idle' });
-  renderLegs();
-  updateSaveEnabled();
-});
-
-function updateSaveEnabled(){
-  routeSaveBtn.disabled = !currentLegs.every(l => l.status==='found' || l.status==='notfound');
-}
-
-function renderLegs(){
-  legsContainer.innerHTML = currentLegs.map((leg,i)=>{
-    let resultHtml = '';
-    if(leg.status==='found'){
-      resultHtml = `<div class="leg-result found">
-        <div class="leg-result-bar" style="background:${leg.color};"></div>
-        <div class="leg-result-body">
-          <div class="leg-result-name">${escapeHtml(leg.line)}</div>
-          <div class="leg-result-sub">${leg.stopCount} stop(s) along the line${leg.matches && leg.matches.length>1 ? ` · <a href="#" class="pick-other" data-i="${i}" style="color:var(--accent);">${leg.matches.length-1} other line(s) also connect these</a>` : ''}</div>
+    <div class="section" style="padding-bottom:10px;">
+      <div class="search-row">
+        <div id="search-container">
+          <input type="text" id="search-input" placeholder="Search a place in Tokyo…" autocomplete="off">
+          <div id="search-dropdown"></div>
         </div>
-      </div>`;
-    } else if(leg.status==='notfound'){
-      resultHtml = `<div class="leg-result notfound">${escapeHtml(leg.reason || "No direct line found between these two stops in the bundled dataset.")}</div>`;
-    }
-    return `
-    <div class="leg-block" data-i="${i}">
-      <div class="leg-top">
-        <span>Leg ${i+1}</span>
-        ${currentLegs.length>1 ? `<button class="leg-remove" data-remove="${i}">Remove</button>` : ''}
+        <button id="pin-mode-btn" class="pin-mode-btn" title="Click map to add pin: Off">📍</button>
       </div>
-      <div class="field autocomplete-box">
-        <label>From station</label>
-        <input type="text" autocomplete="off" data-field="from" data-i="${i}" value="${escapeAttr(leg.from)}">
-        <div class="ac-list" data-ac="from-${i}"></div>
-      </div>
-      <div class="field autocomplete-box" style="margin-bottom:8px;">
-        <label>To station</label>
-        <input type="text" autocomplete="off" data-field="to" data-i="${i}" value="${escapeAttr(leg.to)}">
-        <div class="ac-list" data-ac="to-${i}"></div>
-      </div>
-      <button class="find-btn" data-find="${i}">Find train line</button>
-      ${resultHtml}
     </div>
-  `;
-  }).join('');
 
-  legsContainer.querySelectorAll('input').forEach(inp=>{
-    inp.addEventListener('input', ()=>{
-      const i = parseInt(inp.dataset.i,10);
-      const field = inp.dataset.field;
-      currentLegs[i][field] = inp.value;
-      currentLegs[i].status = 'idle'; currentLegs[i].line = null; currentLegs[i].coords = null;
-      updateSaveEnabled();
-      const acList = legsContainer.querySelector(`.ac-list[data-ac="${field}-${i}"]`);
-      const results = searchStations(inp.value);
-      if(results.length && inp.value.trim()){
-        acList.innerHTML = results.map(name => {
-          const display = LINE_DATA[Object.keys(LINE_DATA).find(l=>LINE_DATA[l].some(s=>s.name.toLowerCase()===name))]
-            .find(s=>s.name.toLowerCase()===name).name;
-          return `<div class="ac-item" data-name="${escapeAttr(display)}">${escapeHtml(display)}</div>`;
-        }).join('');
-        acList.classList.add('open');
-        acList.querySelectorAll('.ac-item').forEach(item=>{
-          item.addEventListener('mousedown', (e)=>{
-            e.preventDefault();
-            inp.value = item.dataset.name;
-            currentLegs[i][field] = item.dataset.name;
-            acList.classList.remove('open');
-          });
-        });
-      } else {
-        acList.classList.remove('open');
+    <div class="section" style="flex:1; display:flex; flex-direction:column; overflow:hidden; padding-top:0; padding-bottom:0;">
+      <div class="section-title">
+        <span>PINNED LOCATIONS <span class="pin-count" id="pin-count"></span></span>
+        <button class="clear-all" id="clear-all-btn" style="display:none;">clear all</button>
+      </div>
+      <div id="pin-list"><div class="empty-note">No pins yet. Search above, or tap 📍 and click the map.</div></div>
+    </div>
+
+    <div class="section" id="navigate-route-section">
+      <div class="route-fields">
+        <div class="route-field from">
+          <span class="tag">FROM</span>
+          <span class="val placeholder" id="from-label">Pick a pin below</span>
+        </div>
+        <div class="route-field to">
+          <span class="tag">TO</span>
+          <span class="val placeholder" id="to-label">Pick a pin below</span>
+        </div>
+      </div>
+      <div class="route-stat" id="route-stat">
+        <span id="route-distance">–</span> apart
+      </div>
+      <div class="mode-toggle" id="mode-toggle">
+        <button class="mode-btn" data-mode="transit" id="mode-transit-btn">🚊 Transit</button>
+        <button class="mode-btn" data-mode="walk" id="mode-walk-btn">🚶 Walk</button>
+      </div>
+      <a class="route-link" id="google-route-link" target="_blank" rel="noopener" aria-disabled="true">
+        <span id="google-route-label">Open transit route in Google Maps</span><span class="arrow">↗</span>
+      </a>
+    </div>
+
+    <div class="section" id="places-hint-section" style="display:none;">
+      <div class="empty-note">Click a pin on the map, or a place's name in the list, to see its full details in the panel on the right.</div>
+    </div>
+  </div>
+  <div id="map-wrap"><div id="map"></div></div>
+  <div id="details-side-panel">
+    <div class="details-panel-header">
+      <span>PLACE DETAILS</span>
+      <button id="close-details-btn" title="Close">×</button>
+    </div>
+    <button id="google-search-place-link" class="route-link secondary" style="display:none; margin-bottom:12px; width:100%;">
+      <span>🔍 Search this place on Google</span><span class="arrow">↗</span>
+    </button>
+    <div id="place-details-empty" class="empty-note">Click a pin on the map, or a place's name in the list, to see its details here.</div>
+    <div id="place-details-host" style="display:none;">
+      <gmp-place-details>
+        <gmp-place-details-place-request id="gmp-place-request"></gmp-place-details-place-request>
+        <gmp-place-standard-content></gmp-place-standard-content>
+      </gmp-place-details>
+      <div id="place-details-caveat">Photos and reviews aren't shown here — the free Demo Key this app runs on doesn't include user-submitted content. Everything else (address, hours, phone, website, etc.) is real data.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------------- storage helpers ----------------
+   Uses Claude's window.storage when this runs inside a Claude artifact,
+   and falls back to plain localStorage when run as a standalone file
+   (e.g. opened directly from disk, which is how most people will use this). */
+const hasClaudeStorage = () => (typeof window !== 'undefined' && !!window.storage);
+
+async function storeGet(key){
+  try{
+    if(hasClaudeStorage()){
+      const r = await window.storage.get(key);
+      return r ? JSON.parse(r.value) : null;
+    }
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+async function storeSet(key, value){
+  try{
+    if(hasClaudeStorage()){
+      await window.storage.set(key, JSON.stringify(value));
+    } else {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+  }catch(e){ console.error('storage set failed', e); }
+}
+
+/* ---------------- shared cloud sync (Vercel KV via /api/pins) ----------------
+   Lets everyone on the trip see the same pins. Falls back silently to
+   local-only storage if /api/pins isn't reachable — e.g. when this file is
+   opened directly (file://) rather than served by Vercel, or if the KV
+   database hasn't been connected to the project yet. */
+async function loadPinsFromCloud(){
+  try{
+    const res = await fetch('/api/pins');
+    if(!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data.pins) ? data.pins : null;
+  }catch(err){ return null; }
+}
+
+async function syncPinsToCloud(){
+  try{
+    await fetch('/api/pins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pins }),
+    });
+  }catch(err){ /* offline or not deployed on Vercel — local storage still has it */ }
+}
+
+function persistPins(){
+  storeSet('tokyo-pins', pins);
+  syncPinsToCloud();
+}
+
+/* ---------------- state ---------------- */
+let map, geocoder, AdvancedMarkerElement;
+let pins = [];              // {id, name, address, lat, lng}
+let markers = {};           // id -> AdvancedMarkerElement
+let fromId = null, toId = null;
+let currentLocationPin = null;   // ephemeral "you are here" pin, not persisted
+let currentLocationMarker = null;
+let pinModeActive = false;
+let routeMode = 'transit';       // 'transit' | 'walk'
+let routeModeManual = false;     // true once the user overrides the auto-suggested mode for the current pair
+const WALK_SUGGEST_KM = 1.2;     // straight-line distance under which walking is auto-suggested (~15-18 min actual walk)
+const WALK_SPEED_KMH = 4.5;      // rough city-walking pace, used only for the "(~N min)" estimate
+
+function findPinById(id){
+  if(!id) return null;
+  if(currentLocationPin && currentLocationPin.id === id) return currentLocationPin;
+  return pins.find(p => p.id === id) || null;
+}
+const DOT_COLORS = ['#e6b94d','#7bc142','#e2574c','#4d9fe6','#c17be6','#e68a4d'];
+
+// Small hand-built vector icon set (simple primitives only — no complex
+// bezier paths — so they render correctly without needing visual testing).
+// Each renders in white on top of the pin's own color as a circular badge
+// that fully replaces the teardrop shape once selected.
+const ICON_LIBRARY = [
+  { id: 'food', label: 'Food', svg: '<ellipse cx="12" cy="8" rx="4" ry="5" fill="white"/><rect x="11" y="12" width="2" height="9" rx="1" fill="white"/>' },
+  { id: 'cafe', label: 'Cafe', svg: '<path d="M5 8h11v6a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V8z" fill="white"/><path d="M16 9.5h1.5a2 2 0 0 1 0 4H16" fill="none" stroke="white" stroke-width="1.5"/><rect x="4" y="19" width="13" height="1.6" rx="0.8" fill="white"/>' },
+  { id: 'hotel', label: 'Hotel', svg: '<rect x="3" y="12" width="18" height="7" rx="1.5" fill="white"/><rect x="4" y="8" width="6" height="5" rx="1.5" fill="white" opacity="0.65"/><rect x="3" y="19" width="2" height="2" fill="white"/><rect x="19" y="19" width="2" height="2" fill="white"/>' },
+  { id: 'temple', label: 'Temple', svg: '<rect x="4" y="7" width="16" height="2" fill="white"/><rect x="6" y="10" width="12" height="1.5" fill="white"/><rect x="6" y="9" width="2" height="12" fill="white"/><rect x="16" y="9" width="2" height="12" fill="white"/>' },
+  { id: 'shopping', label: 'Shopping', svg: '<path d="M6 8h12l1 12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L6 8z" fill="white"/><path d="M9 8V6a3 3 0 0 1 6 0v2" fill="none" stroke="white" stroke-width="1.5"/>' },
+  { id: 'attraction', label: 'Attraction', svg: '<polygon points="12,2 14.7,9 22,9 16.2,13.6 18.5,21 12,16.8 5.5,21 7.8,13.6 2,9 9.3,9" fill="white"/>' },
+  { id: 'park', label: 'Park', svg: '<polygon points="12,2 6,12 9,12 5,19 19,19 15,12 18,12" fill="white"/><rect x="11" y="19" width="2" height="3" fill="white"/>' },
+  { id: 'train', label: 'Train', svg: '<rect x="5" y="4" width="14" height="12" rx="3" fill="white"/><circle cx="8" cy="18" r="1.6" fill="white"/><circle cx="16" cy="18" r="1.6" fill="white"/><rect x="9" y="16" width="6" height="1" fill="white"/>' },
+];
+function findIconDef(id){ return ICON_LIBRARY.find(i => i.id === id) || null; }
+let editingPinId = null;   // pin currently showing its edit panel in the list
+let dragSourcePinId = null;
+const TOKYO_CENTER = { lat: 35.6812, lng: 139.7671 };
+
+
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ---------------- theme ---------------- */
+async function initTheme(){
+  const saved = await storeGet('theme');
+  applyTheme(saved === 'light' ? 'light' : 'dark');
+}
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  const mapEl = document.getElementById('map');
+  if(mapEl) mapEl.classList.toggle('dark-filter', theme === 'dark');
+  document.getElementById('theme-toggle').textContent = theme === 'dark' ? '🌙' : '☀️';
+}
+document.getElementById('theme-toggle').addEventListener('click', async () => {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  await storeSet('theme', next);
+  // Redraw the connector line so its color matches the new theme's amber.
+  const fromPin = findPinById(fromId), toPin = findPinById(toId);
+  if(fromPin && toPin) updateConnectorLine(fromPin, toPin);
+});
+initTheme();
+
+/* ---------------- mobile bottom sheet (drag + tap-to-cycle) ---------------- */
+const SHEET_STATES = ['peek', 'half', 'full'];
+const SHEET_PEEK_PX = 178;
+let sheetState = 'peek';
+
+function isMobileLayout(){ return window.matchMedia('(max-width: 720px)').matches; }
+
+function setSheetState(state){
+  sheetState = state;
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.remove('sheet-half', 'sheet-full');
+  if(state === 'half') sidebar.classList.add('sheet-half');
+  else if(state === 'full') sidebar.classList.add('sheet-full');
+}
+
+function sheetVisiblePxForState(state){
+  const vh = window.innerHeight;
+  if(state === 'full') return vh * 0.92;
+  if(state === 'half') return vh * 0.5;
+  return SHEET_PEEK_PX;
+}
+
+function initMobileSheet(){
+  const handle = document.getElementById('sheet-handle');
+  const sidebar = document.getElementById('sidebar');
+  if(!handle || !sidebar) return;
+
+  let startY = 0, startVisiblePx = 0, dragging = false;
+
+  function onDragStart(clientY){
+    if(!isMobileLayout()) return;
+    startY = clientY;
+    startVisiblePx = sheetVisiblePxForState(sheetState);
+    dragging = false;
+    sidebar.classList.add('dragging');
+  }
+  function onDragMove(clientY){
+    if(!isMobileLayout() || startY === 0) return;
+    const deltaY = clientY - startY;
+    if(Math.abs(deltaY) > 5) dragging = true;
+    if(!dragging) return;
+    const maxPx = window.innerHeight * 0.92;
+    const visiblePx = Math.min(maxPx, Math.max(SHEET_PEEK_PX, startVisiblePx - deltaY));
+    sidebar.style.transform = `translateY(calc(100% - ${visiblePx}px))`;
+  }
+  function onDragEnd(){
+    if(!isMobileLayout()){ startY = 0; return; }
+    if(dragging){
+      // Measure the dragged position BEFORE touching any styles — clearing
+      // the inline transform first (the old code's bug) would make this
+      // read the stale pre-drag position instead of where the sheet
+      // actually is, and would also cause a visible snap-back-then-animate
+      // glitch by reverting to the OLD state before the new one is applied.
+      const currentVisible = window.innerHeight - sidebar.getBoundingClientRect().top;
+      const candidates = SHEET_STATES.map(s => ({ s, px: sheetVisiblePxForState(s) }));
+      let best = candidates[0];
+      let bestDist = Infinity;
+      candidates.forEach(c => {
+        const d = Math.abs(c.px - currentVisible);
+        if(d < bestDist){ bestDist = d; best = c; }
+      });
+      // Apply the target state's class WHILE the inline transform (from
+      // dragging) still overrides it — no visual change yet. Only once
+      // transition is re-enabled and the inline override is cleared does
+      // the sheet animate, smoothly, straight from the dragged position to
+      // the new target — no intermediate jump.
+      setSheetState(best.s);
+      sidebar.classList.remove('dragging');
+      sidebar.style.transform = '';
+    } else {
+      // Plain tap on the handle — cycle to the next state.
+      sidebar.classList.remove('dragging');
+      sidebar.style.transform = '';
+      const idx = SHEET_STATES.indexOf(sheetState);
+      setSheetState(SHEET_STATES[(idx + 1) % SHEET_STATES.length]);
+    }
+    startY = 0;
+    setTimeout(() => { dragging = false; }, 50);
+  }
+
+  handle.addEventListener('touchstart', (e) => onDragStart(e.touches[0].clientY), { passive:true });
+  handle.addEventListener('touchmove', (e) => onDragMove(e.touches[0].clientY), { passive:true });
+  handle.addEventListener('touchend', onDragEnd);
+
+  // Mouse equivalents too, so this is testable on desktop by shrinking the window.
+  handle.addEventListener('mousedown', (e) => {
+    onDragStart(e.clientY);
+    const onMove = (ev) => onDragMove(ev.clientY);
+    const onUp = () => { onDragEnd(); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
+}
+initMobileSheet();
+
+// Briefly draw attention to the drag handle on first load, since a thin
+// bar is easy to miss against the map behind it.
+if(isMobileLayout()){
+  setTimeout(() => {
+    const handle = document.getElementById('sheet-handle');
+    if(!handle) return;
+    handle.classList.add('hint');
+    setTimeout(() => handle.classList.remove('hint'), 2400);
+  }, 900);
+}
+
+/* ---------------- pin-creation mode ----------------
+   Off by default so panning/exploring the map never accidentally drops a pin. */
+function setPinMode(active){
+  pinModeActive = active;
+  const btn = document.getElementById('pin-mode-btn');
+  btn.title = `Click map to add pin: ${active ? 'On' : 'Off'}`;
+  btn.classList.toggle('active', active);
+  const mapEl = document.getElementById('map');
+  if(mapEl) mapEl.classList.toggle('pin-mode-cursor', active);
+}
+document.getElementById('pin-mode-btn').addEventListener('click', () => setPinMode(!pinModeActive));
+
+/* ---------------- app mode: Navigate vs Places ---------------- */
+let appMode = 'navigate';        // 'navigate' | 'places'
+let selectedDetailsPinId = null; // pin currently shown in the Places panel
+
+function setAppMode(mode){
+  appMode = mode;
+  document.getElementById('mode-tab-navigate').classList.toggle('active', mode === 'navigate');
+  document.getElementById('mode-tab-places').classList.toggle('active', mode === 'places');
+  document.getElementById('navigate-route-section').style.display = mode === 'navigate' ? '' : 'none';
+  document.getElementById('places-hint-section').style.display = mode === 'places' ? 'block' : 'none';
+  document.getElementById('sidebar').classList.toggle('mode-places', mode === 'places');
+  document.getElementById('sidebar-sub').textContent = mode === 'places'
+    ? 'Click a pin or its name to see details'
+    : 'Search to pin, then pick a From / To for routing';
+  if(mode !== 'places') closePlaceDetails();
+}
+document.getElementById('mode-tab-navigate').addEventListener('click', () => setAppMode('navigate'));
+document.getElementById('mode-tab-places').addEventListener('click', () => setAppMode('places'));
+
+function togglePlaceDetails(pin){
+  if(!pin) return;
+  if(selectedDetailsPinId === pin.id){ closePlaceDetails(); return; }
+  showPlaceDetails(pin);
+}
+
+function showPlaceDetails(pin){
+  const emptyEl = document.getElementById('place-details-empty');
+  const hostEl = document.getElementById('place-details-host');
+  selectedDetailsPinId = pin.id;
+  document.getElementById('details-side-panel').classList.add('visible');
+
+  const searchLink = document.getElementById('google-search-place-link');
+  const query = pin.name + (pin.address ? ' ' + pin.address : '');
+  searchLink.dataset.searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  searchLink.style.display = 'flex';
+
+  if(!pin.placeId){
+    emptyEl.textContent = "This pin isn't linked to a Google Place (it was dropped manually), so detailed info isn't available for it. Pins added via search have full details.";
+    emptyEl.style.display = 'block';
+    hostEl.style.display = 'none';
+  } else {
+    document.getElementById('gmp-place-request').place = pin.placeId;
+    emptyEl.style.display = 'none';
+    hostEl.style.display = 'block';
+  }
+
+  updateMarkerSelectionRing();
+  setSelectedPinRowClass(pin.id);
+  const item = document.querySelector(`.pin-item[data-pin-id="${pin.id}"]`);
+  if(item) item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closePlaceDetails(){
+  selectedDetailsPinId = null;
+  const emptyEl = document.getElementById('place-details-empty');
+  emptyEl.textContent = "Click a pin on the map, or a place's name in the list, to see its details here.";
+  emptyEl.style.display = 'block';
+  document.getElementById('place-details-host').style.display = 'none';
+  document.getElementById('google-search-place-link').style.display = 'none';
+  document.getElementById('details-side-panel').classList.remove('visible');
+  updateMarkerSelectionRing();
+  setSelectedPinRowClass(null);
+}
+document.getElementById('close-details-btn').addEventListener('click', closePlaceDetails);
+
+document.getElementById('google-search-place-link').addEventListener('click', (e) => {
+  const url = e.currentTarget.dataset.searchUrl;
+  if(!url) return;
+  // window.open() alone didn't stop the Google app's Universal Link from
+  // grabbing this — same synthetic-click technique used for the Maps
+  // button, which reliably keeps it in the current browser as a plain new tab.
+  clickToOpen(url, true);
+});
+
+function setSelectedPinRowClass(id){
+  document.querySelectorAll('.pin-item').forEach(el => {
+    el.classList.toggle('selected-details', el.getAttribute('data-pin-id') === id);
+  });
+}
+
+function updateMarkerSelectionRing(){
+  Object.entries(markers).forEach(([id, marker]) => {
+    if(marker.content && marker.content.classList){
+      marker.content.classList.toggle('is-viewing', id === selectedDetailsPinId);
+    }
+  });
+}
+
+
+/* ---------------- setup gate ---------------- */
+document.getElementById('key-submit').addEventListener('click', submitKey);
+document.getElementById('key-input').addEventListener('keydown', e => { if(e.key === 'Enter') submitKey(); });
+
+async function submitKey(){
+  const input = document.getElementById('key-input');
+  const key = input.value.trim();
+  const errEl = document.getElementById('setup-error');
+  errEl.style.display = 'none';
+  if(!key){ errEl.textContent = 'Enter a key to continue.'; errEl.style.display = 'block'; return; }
+  await storeSet('gmaps-api-key', key);
+  loadGoogleMaps(key);
+}
+
+function loadGoogleMaps(key){
+  window.gm_authFailure = () => {
+    document.getElementById('setup').classList.remove('hidden');
+    const errEl = document.getElementById('setup-error');
+    errEl.textContent = 'Google rejected this key. Double check it was copied correctly and try again.';
+    errEl.style.display = 'block';
+  };
+
+  // Official Google Maps bootstrap loader. Unlike the classic
+  // "?libraries=a,b,c" URL param (which doesn't reliably expose newer
+  // modular libraries like "routes"), this lets us importLibrary() each
+  // piece on demand, which is the pattern Google's own Routes API docs use.
+  (g => {
+    var h, a, k, p = "The Google Maps JavaScript API", c = "google", l = "importLibrary", q = "__ib__",
+        m = document, b = window;
+    b = b[c] || (b[c] = {});
+    var d = b.maps || (b.maps = {}), r = new Set(), e = new URLSearchParams(),
+        u = () => h || (h = new Promise(async (f, n) => {
+          await (a = m.createElement("script"));
+          e.set("libraries", [...r] + "");
+          for (k in g) e.set(k.replace(/[A-Z]/g, t => "_" + t[0].toLowerCase()), g[k]);
+          e.set("callback", c + ".maps." + q);
+          a.src = `https://maps.${c}apis.com/maps/api/js?` + e;
+          d[q] = f;
+          a.onerror = () => h = n(Error(p + " could not load."));
+          a.nonce = m.querySelector("script[nonce]")?.nonce || "";
+          m.head.append(a);
+        }));
+    d[l] ? console.warn(p + " only loads once. Ignoring:", g) : d[l] = (f, ...n) => r.add(f) && u().then(() => d[l](f, ...n));
+  })({ key: key, v: "weekly" });
+
+  initApp().catch(err => {
+    console.error(err);
+    document.getElementById('setup').classList.remove('hidden');
+    const errEl = document.getElementById('setup-error');
+    errEl.textContent = 'Could not load Google Maps with this key: ' + (err && err.message ? err.message : 'unknown error');
+    errEl.style.display = 'block';
+  });
+}
+
+/* ---------------- map init ---------------- */
+async function initApp(){
+  const [{ Map }, { AdvancedMarkerElement: AME }, { Geocoder }, placesLib] = await Promise.all([
+    google.maps.importLibrary('maps'),
+    google.maps.importLibrary('marker'),
+    google.maps.importLibrary('geocoding'),
+    google.maps.importLibrary('places'),
+  ]);
+  AdvancedMarkerElement = AME;
+  geocoder = new Geocoder();
+
+  document.getElementById('setup').classList.add('hidden');
+  document.getElementById('app').classList.add('visible');
+
+  map = new Map(document.getElementById('map'), {
+    center: TOKYO_CENTER,
+    zoom: 12,
+    mapId: 'DEMO_MAP_ID',
+    mapTypeControl: false,
+    streetViewControl: false,
+    // 'greedy' guarantees one-finger panning always works. The default
+    // ('auto') sometimes decides to require two fingers ("cooperative"
+    // mode) when it detects the map sitting inside a page that might also
+    // scroll — a false positive here, since the map is the full-screen
+    // primary content, not an embed competing with page scroll.
+    gestureHandling: 'greedy',
+  });
+  document.getElementById('map').classList.toggle('dark-filter', (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark');
+
+  // Custom-built search box (rather than the Places UI Kit autocomplete
+  // element) so Enter-to-pick-first-result and mobile keyboard "Go" both
+  // work reliably — the widget's internals live behind a closed shadow
+  // root we can't reach to intercept those directly.
+  let searchSuggestions = [];
+  let searchQueryForSuggestions = '';
+  let searchDebounceTimer = null;
+  const searchSessionToken = new placesLib.AutocompleteSessionToken();
+  const searchInput = document.getElementById('search-input');
+  const searchDropdown = document.getElementById('search-dropdown');
+
+  async function fetchSuggestionsFor(query){
+    if(!query){ searchSuggestions = []; searchQueryForSuggestions = ''; return []; }
+    try{
+      const { suggestions } = await placesLib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input: query,
+        locationBias: { radius: 20000, center: TOKYO_CENTER },
+        sessionToken: searchSessionToken,
+      });
+      searchSuggestions = suggestions || [];
+      searchQueryForSuggestions = query;
+      return searchSuggestions;
+    }catch(err){
+      console.error('autocomplete fetch failed', err);
+      searchSuggestions = [];
+      return [];
+    }
+  }
+
+  function renderSearchDropdown(){
+    if(searchSuggestions.length === 0){ searchDropdown.classList.remove('visible'); searchDropdown.innerHTML = ''; return; }
+    searchDropdown.innerHTML = searchSuggestions.map((s, i) => {
+      const pred = s.placePrediction;
+      const text = pred && pred.text ? escapeHtml(pred.text.toString()) : 'Unknown place';
+      return `<div class="search-suggestion" data-idx="${i}">${text}</div>`;
+    }).join('');
+    searchDropdown.classList.add('visible');
+    searchDropdown.querySelectorAll('.search-suggestion').forEach(el => {
+      el.addEventListener('click', () => selectSuggestion(parseInt(el.getAttribute('data-idx'), 10)));
+    });
+  }
+
+  async function selectSuggestion(idx){
+    const s = searchSuggestions[idx];
+    if(!s || !s.placePrediction) return;
+    try{
+      const place = s.placePrediction.toPlace();
+      await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location', 'id'] });
+      addPin({
+        id: place.id,
+        placeId: place.id,
+        name: place.displayName || 'Unnamed place',
+        address: place.formattedAddress || '',
+        lat: place.location.lat(),
+        lng: place.location.lng(),
+      });
+    }catch(err){ console.error('place fetch failed', err); }
+    searchInput.value = '';
+    searchSuggestions = [];
+    searchQueryForSuggestions = '';
+    searchDropdown.classList.remove('visible');
+    searchDropdown.innerHTML = '';
+  }
+
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchDebounceTimer);
+    const query = searchInput.value.trim();
+    if(!query){ searchSuggestions = []; searchDropdown.classList.remove('visible'); searchDropdown.innerHTML = ''; return; }
+    searchDebounceTimer = setTimeout(async () => {
+      await fetchSuggestionsFor(query);
+      renderSearchDropdown();
+    }, 250);
+  });
+
+  searchInput.addEventListener('keydown', async (e) => {
+    if(e.key !== 'Enter') return;
+    e.preventDefault();
+    const query = searchInput.value.trim();
+    if(!query) return;
+    clearTimeout(searchDebounceTimer);
+    // Use the cached suggestions if they already match what's typed;
+    // otherwise fetch fresh ones synchronously so Enter works even if
+    // pressed before the debounce timer would have fired.
+    const list = (searchQueryForSuggestions === query && searchSuggestions.length > 0)
+      ? searchSuggestions
+      : await fetchSuggestionsFor(query);
+    if(list.length > 0) await selectSuggestion(0);
+  });
+
+  document.addEventListener('click', (e) => {
+    if(!searchDropdown.contains(e.target) && e.target !== searchInput){
+      searchDropdown.classList.remove('visible');
+    }
+  });
+
+  map.addListener('click', (e) => {
+    if(!pinModeActive) return;
+    const lat = e.latLng.lat(), lng = e.latLng.lng();
+    let name = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    let address = '';
+    let placeId = null;
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if(status === 'OK' && results[0]){
+        address = results[0].formatted_address;
+        name = (results[0].address_components && results[0].address_components[0]) ? results[0].address_components[0].long_name : name;
+        placeId = results[0].place_id || null;
+      }
+      addPin({ id: 'p_' + Date.now(), placeId, name, address, lat, lng });
+    });
+  });
+
+  const cloudPins = await loadPinsFromCloud();
+  if(cloudPins){
+    pins = cloudPins;
+  } else {
+    const saved = await storeGet('tokyo-pins');
+    if(saved && Array.isArray(saved)) pins = saved;
+  }
+  pins.forEach(p => placeMarker(p));
+  renderPinList();
+  startCloudPolling();
+}
+
+// Periodically pull the shared list so everyone on the trip sees each
+// other's pins without needing to refresh. Skips the merge while someone
+// is actively editing a pin, so the panel doesn't get yanked out from
+// under them mid-edit.
+function startCloudPolling(){
+  setInterval(async () => {
+    if(editingPinId) return;
+    const cloudPins = await loadPinsFromCloud();
+    if(!cloudPins) return;
+    if(JSON.stringify(cloudPins) === JSON.stringify(pins)) return;
+
+    const newIds = new Set(cloudPins.map(p => p.id));
+    Object.keys(markers).forEach(id => {
+      if(!newIds.has(id)){ markers[id].map = null; delete markers[id]; }
+    });
+    pins = cloudPins;
+    pins.forEach(p => {
+      if(markers[p.id]) refreshMarkerContent(p);
+      else placeMarker(p);
+    });
+    renderPinList();
+    updateRouteFields();
+    storeSet('tokyo-pins', pins);
+  }, 15000);
+}
+
+/* ---------------- pins ---------------- */
+function addPin(p){
+  if(pins.find(x => x.id === p.id)) return;
+  if(!p.color) p.color = DOT_COLORS[Math.floor(Math.random() * DOT_COLORS.length)];
+  if(p.icon === undefined) p.icon = null;
+  pins.push(p);
+  placeMarker(p);
+  renderPinList();
+  persistPins();
+  map.panTo({ lat: p.lat, lng: p.lng });
+  if(map.getZoom() < 14) map.setZoom(15);
+}
+
+function buildPinContentHtml(pin){
+  const color = pin.color || '#e6b94d';
+  const iconDef = findIconDef(pin.icon);
+
+  if(iconDef){
+    // Icon mode fully replaces the teardrop with a circular badge. The
+    // badge is offset so its own center — not the wrapper's bottom edge —
+    // lands on the true coordinate, same centering trick used for the
+    // "you are here" marker elsewhere in this file.
+    return `
+      <div class="icon-badge" style="background:${color};">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">${iconDef.svg}</svg>
+      </div>
+      <div class="map-pin-label">${escapeHtml(pin.name)}</div>
+    `;
+  }
+
+  return `
+    <svg viewBox="0 0 26 35" xmlns="http://www.w3.org/2000/svg">
+      <path d="M13 0C5.8 0 0 5.8 0 13c0 9.7 13 22 13 22s13-12.3 13-22C26 5.8 20.2 0 13 0z"
+            style="fill:${color}; stroke:var(--bg); stroke-width:1.5;"></path>
+      <circle cx="13" cy="13" r="5.5" style="fill:var(--bg);"></circle>
+    </svg>
+    <div class="map-pin-label">${escapeHtml(pin.name)}</div>
+  `;
+}
+
+function placeMarker(p){
+  const wrap = document.createElement('div');
+  wrap.className = 'map-pin';
+  wrap.classList.toggle('map-pin--icon', !!findIconDef(p.icon));
+  wrap.innerHTML = buildPinContentHtml(p);
+  const marker = new AdvancedMarkerElement({
+    map, position: { lat: p.lat, lng: p.lng }, content: wrap, title: p.name, gmpClickable: true,
+  });
+  marker.addEventListener('gmp-click', () => {
+    // Look up the live pin by id rather than closing over `p` directly —
+    // once cloud sync can replace the whole pins array wholesale, this
+    // closure's original `p` could otherwise go stale (old name/color).
+    const currentPin = findPinById(p.id) || p;
+    if(appMode === 'places') togglePlaceDetails(currentPin);
+    else highlightPinInList(currentPin.id);
+  });
+  markers[p.id] = marker;
+}
+
+function refreshMarkerContent(pin){
+  const marker = markers[pin.id];
+  if(!marker || !marker.content) return;
+  marker.content.classList.toggle('map-pin--icon', !!findIconDef(pin.icon));
+  marker.content.innerHTML = buildPinContentHtml(pin);
+  marker.title = pin.name;
+}
+
+function highlightPinInList(id){
+  const item = document.querySelector(`.pin-item[data-pin-id="${id}"]`);
+  if(!item) return;
+  item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  item.classList.remove('flash');
+  // Restart the CSS animation even if it's already mid-flash from a previous click.
+  void item.offsetWidth;
+  item.classList.add('flash');
+  item.addEventListener('animationend', () => item.classList.remove('flash'), { once: true });
+}
+
+function focusMapOnPin(pin){
+  if(!map || !pin) return;
+  map.panTo({ lat: pin.lat, lng: pin.lng });
+  if(map.getZoom() < 16) map.setZoom(16);
+  bounceMarker(pin.id);
+}
+
+function bounceMarker(id){
+  const marker = markers[id];
+  if(!marker || !marker.content) return;
+  const el = marker.content;
+  el.classList.remove('bounce');
+  void el.offsetWidth; // restart animation if already mid-bounce
+  el.classList.add('bounce');
+  el.addEventListener('animationend', () => el.classList.remove('bounce'), { once: true });
+}
+
+function refreshMarkerStates(){
+  Object.entries(markers).forEach(([id, marker]) => {
+    const el = marker.content;
+    if(!el || !el.classList) return;
+    el.classList.toggle('is-from', id === fromId);
+    el.classList.toggle('is-to', id === toId);
+  });
+}
+
+function removePin(id){
+  pins = pins.filter(p => p.id !== id);
+  if(markers[id]){ markers[id].map = null; delete markers[id]; }
+  if(fromId === id) fromId = null;
+  if(toId === id) toId = null;
+  if(selectedDetailsPinId === id) closePlaceDetails();
+  if(editingPinId === id) editingPinId = null;
+  renderPinList();
+  updateRouteFields();
+  persistPins();
+}
+
+function setFrom(id){
+  fromId = (fromId === id) ? null : id;
+  if(fromId !== null && fromId === toId) toId = null; // a place can't be both endpoints at once
+  routeModeManual = false;
+  clearCurrentLocationMarker();
+  renderPinList(); updateRouteFields(); refreshMarkerStates();
+}
+function setTo(id){
+  toId = (toId === id) ? null : id;
+  if(toId !== null && toId === fromId) fromId = null; // a place can't be both endpoints at once
+  routeModeManual = false;
+  renderPinList(); updateRouteFields(); refreshMarkerStates();
+}
+
+function clearCurrentLocationMarker(){
+  if(currentLocationMarker){ currentLocationMarker.map = null; currentLocationMarker = null; }
+  currentLocationPin = null;
+}
+
+function useCurrentLocationAsFrom(pinId, btn){
+  if(!navigator.geolocation){
+    alert("This browser doesn't support geolocation, so \"From here\" isn't available. You can still search or pin your starting point manually and use SET FROM.");
+    return;
+  }
+  const originalText = btn.textContent;
+  btn.textContent = 'Locating…';
+  btn.disabled = true;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      btn.textContent = originalText;
+      btn.disabled = false;
+      currentLocationPin = {
+        id: 'current-location',
+        name: 'Your current location',
+        address: '',
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+      };
+      placeCurrentLocationMarker(currentLocationPin);
+      fromId = 'current-location';
+      toId = pinId;
+      routeModeManual = false;
+      renderPinList();
+      updateRouteFields();
+      refreshMarkerStates();
+      map.panTo({ lat: currentLocationPin.lat, lng: currentLocationPin.lng });
+    },
+    (err) => {
+      btn.textContent = originalText;
+      btn.disabled = false;
+      let msg = "Couldn't get your current location.";
+      if(err.code === err.PERMISSION_DENIED) msg += ' Location access was denied — check your browser/site permissions.';
+      else if(err.code === err.TIMEOUT) msg += ' The request timed out — try again.';
+      alert(msg + ' You can still pin your starting point manually and use SET FROM instead.');
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+function placeCurrentLocationMarker(p){
+  if(currentLocationMarker){ currentLocationMarker.map = null; }
+  const wrap = document.createElement('div');
+  wrap.className = 'current-location-pin';
+  wrap.innerHTML = `<div class="current-location-dot"></div><div class="current-location-ring"></div>`;
+  currentLocationMarker = new AdvancedMarkerElement({
+    map, position: { lat: p.lat, lng: p.lng }, content: wrap, title: 'Your current location', zIndex: 999,
+  });
+}
+
+document.getElementById('clear-all-btn').addEventListener('click', () => {
+  if(pins.length === 0) return;
+  if(!confirm('Remove all ' + pins.length + ' pinned locations?')) return;
+  Object.values(markers).forEach(m => { m.map = null; });
+  markers = {};
+  pins = [];
+  fromId = null; toId = null;
+  renderPinList();
+  updateRouteFields();
+  persistPins();
+});
+
+function renderPinList(){
+  const list = document.getElementById('pin-list');
+  const countEl = document.getElementById('pin-count');
+  const clearBtn = document.getElementById('clear-all-btn');
+  countEl.textContent = pins.length > 0 ? `(${pins.length})` : '';
+  clearBtn.style.display = pins.length > 0 ? 'block' : 'none';
+  if(pins.length === 0){
+    list.innerHTML = '<div class="empty-note">No pins yet. Search above, or turn on pin mode and click the map.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  pins.forEach(p => {
+    const item = document.createElement('div');
+    item.className = 'pin-item';
+    item.setAttribute('data-pin-id', p.id);
+    item.draggable = true;
+    item.innerHTML = `
+      <span class="drag-handle" title="Drag to reorder">⠿</span>
+      <div class="pin-dot" style="background:${p.color}"></div>
+      <div class="pin-info">
+        <div class="pin-name-row">
+          <div class="pin-name" data-act="view-details" data-id="${p.id}">${escapeHtml(p.name)}</div>
+          <button class="pin-edit-btn" data-act="edit" data-id="${p.id}" title="Edit pin">✏️</button>
+        </div>
+        <div class="pin-addr">${escapeHtml(p.address || '')}</div>
+        <div class="pin-actions">
+          <button class="pin-btn ${fromId===p.id?'active-from':''}" data-act="from" data-id="${p.id}">${fromId===p.id?'✓ FROM':'SET FROM'}</button>
+          <button class="pin-btn ${toId===p.id?'active-to':''}" data-act="to" data-id="${p.id}">${toId===p.id?'✓ TO':'SET TO'}</button>
+          <button class="pin-btn from-here" data-act="from-here" data-id="${p.id}" title="Route here from your current location">📍 From here</button>
+        </div>
+        ${editingPinId === p.id ? buildEditPanelHtml(p) : ''}
+      </div>
+      <button class="pin-remove" data-act="remove" data-id="${p.id}">×</button>
+    `;
+    attachDragHandlers(item, p.id);
+    list.appendChild(item);
+  });
+  list.querySelectorAll('[data-act]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-id');
+      const act = btn.getAttribute('data-act');
+      if(act === 'from') setFrom(id);
+      else if(act === 'to') setTo(id);
+      else if(act === 'remove') removePin(id);
+      else if(act === 'from-here') useCurrentLocationAsFrom(id, btn);
+      else if(act === 'view-details'){
+        const pin = findPinById(id);
+        focusMapOnPin(pin);
+        if(appMode === 'places') togglePlaceDetails(pin);
+      }
+      else if(act === 'edit'){ editingPinId = (editingPinId === id) ? null : id; renderPinList(); }
+      else if(act === 'close-edit'){ editingPinId = null; renderPinList(); }
+      else if(act === 'set-color'){
+        const pin = findPinById(id);
+        if(pin){ pin.color = btn.getAttribute('data-color'); refreshMarkerContent(pin); persistPins(); renderPinList(); }
+      } else if(act === 'set-icon'){
+        const pin = findPinById(id);
+        if(pin){ pin.icon = btn.getAttribute('data-icon') || null; refreshMarkerContent(pin); persistPins(); renderPinList(); }
       }
     });
-    inp.addEventListener('blur', ()=>{
-      setTimeout(()=>{
-        const i = inp.dataset.i, field = inp.dataset.field;
-        const acList = legsContainer.querySelector(`.ac-list[data-ac="${field}-${i}"]`);
-        if(acList) acList.classList.remove('open');
-      }, 150);
+  });
+  list.querySelectorAll('.rename-input').forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter'){ e.preventDefault(); input.blur(); }
+    });
+    input.addEventListener('blur', () => {
+      const id = input.getAttribute('data-id');
+      const pin = findPinById(id);
+      const newName = input.value.trim();
+      if(pin && newName && newName !== pin.name){
+        pin.name = newName;
+        refreshMarkerContent(pin);
+        persistPins();
+        renderPinList();
+      }
     });
   });
-  legsContainer.querySelectorAll('[data-find]').forEach(btn=>{
-    btn.addEventListener('click', ()=> findLine(parseInt(btn.dataset.find,10)));
+  setSelectedPinRowClass(selectedDetailsPinId);
+}
+
+function buildEditPanelHtml(p){
+  const noneSwatch = `
+    <button class="icon-swatch ${!p.icon ? 'selected' : ''}" data-act="set-icon" data-id="${p.id}" data-icon="" title="Default pin" style="background:${p.color};">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="none" stroke="white" stroke-width="2.2"/></svg>
+    </button>`;
+  const iconSwatches = ICON_LIBRARY.map(i => `
+    <button class="icon-swatch ${p.icon===i.id ? 'selected' : ''}" data-act="set-icon" data-id="${p.id}" data-icon="${i.id}" title="${i.label}" style="background:${p.color};">
+      <svg viewBox="0 0 24 24">${i.svg}</svg>
+    </button>`).join('');
+  const colorSwatches = DOT_COLORS.map(c => `
+    <button class="swatch ${p.color===c ? 'selected' : ''}" data-act="set-color" data-id="${p.id}" data-color="${c}" style="background:${c}"></button>`).join('');
+
+  return `
+    <div class="pin-edit-panel">
+      <input type="text" class="rename-input" data-id="${p.id}" value="${escapeHtml(p.name)}" placeholder="Pin name">
+      <div class="icon-swatches">${noneSwatch}${iconSwatches}</div>
+      <div class="color-swatches">${colorSwatches}</div>
+      <button class="pin-btn" data-act="close-edit">Done</button>
+    </div>
+  `;
+}
+
+function attachDragHandlers(item, pinId){
+  item.addEventListener('dragstart', (e) => {
+    dragSourcePinId = pinId;
+    item.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try{ e.dataTransfer.setData('text/plain', pinId); }catch(err){}
   });
-  legsContainer.querySelectorAll('[data-remove]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      currentLegs.splice(parseInt(btn.dataset.remove,10),1);
-      renderLegs(); updateSaveEnabled();
-    });
+  item.addEventListener('dragend', () => {
+    item.classList.remove('dragging');
+    dragSourcePinId = null;
+    document.querySelectorAll('.pin-item.drag-over').forEach(el => el.classList.remove('drag-over'));
   });
-  legsContainer.querySelectorAll('.pick-other').forEach(a=>{
-    a.addEventListener('click', (e)=>{
-      e.preventDefault();
-      const i = parseInt(a.dataset.i,10);
-      showMatchChoices(i);
-    });
+  item.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if(dragSourcePinId && dragSourcePinId !== pinId) item.classList.add('drag-over');
+  });
+  item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+  item.addEventListener('drop', (e) => {
+    e.preventDefault();
+    item.classList.remove('drag-over');
+    if(!dragSourcePinId || dragSourcePinId === pinId) return;
+    animateReorder(() => reorderPins(dragSourcePinId, pinId));
   });
 }
 
-function showMatchChoices(i){
-  const leg = currentLegs[i];
-  const block = legsContainer.querySelector(`.leg-block[data-i="${i}"]`);
-  const choicesHtml = leg.matches.map((m,mi)=>`
-    <div class="match-choice" data-mi="${mi}">
-      <span class="legend-swatch" style="background:${m.color};width:16px;height:5px;border-radius:3px;"></span>${escapeHtml(m.line)}
-    </div>`).join('');
-  const wrap = document.createElement('div');
-  wrap.innerHTML = choicesHtml;
-  const existing = block.querySelector('.leg-result');
-  existing.insertAdjacentElement('afterend', wrap);
-  wrap.querySelectorAll('.match-choice').forEach(el=>{
-    el.addEventListener('click', ()=>{
-      const m = leg.matches[parseInt(el.dataset.mi,10)];
-      leg.line = m.line; leg.color = m.color; leg.coords = m.coords; leg.stopCount = m.coords.length; leg.approx = false; leg.status='found';
-      renderLegs(); updateSaveEnabled();
-    });
-  });
+function reorderPins(sourceId, targetId){
+  const fromIdx = pins.findIndex(p => p.id === sourceId);
+  const toIdx = pins.findIndex(p => p.id === targetId);
+  if(fromIdx === -1 || toIdx === -1) return;
+  const [moved] = pins.splice(fromIdx, 1);
+  pins.splice(toIdx, 0, moved);
+  persistPins();
+  renderPinList();
 }
 
-// Core offline matching: find which bundled line(s) contain BOTH station names, in order.
-function findLine(i){
-  const leg = currentLegs[i];
-  const fromKey = leg.from.trim().toLowerCase();
-  const toKey = leg.to.trim().toLowerCase();
-  if(!fromKey || !toKey) return;
+// FLIP technique: capture each row's position before the DOM changes, let
+// the change happen (re-render with the new order), then measure again and
+// animate from the old position to the new one — so reordering slides
+// smoothly into place instead of the list just snapping.
+function animateReorder(mutateAndRender){
+  const list = document.getElementById('pin-list');
+  const firstRects = new Map();
+  list.querySelectorAll('.pin-item').forEach(item => {
+    firstRects.set(item.getAttribute('data-pin-id'), item.getBoundingClientRect());
+  });
 
-  const fromHits = STATION_INDEX[fromKey];
-  const toHits = STATION_INDEX[toKey];
+  mutateAndRender();
 
-  if(!fromHits){ leg.status='notfound'; leg.reason = `"${leg.from}" isn't in the bundled station list — try the English station name (e.g. "Shibuya", "Ueno").`; renderLegs(); updateSaveEnabled(); return; }
-  if(!toHits){ leg.status='notfound'; leg.reason = `"${leg.to}" isn't in the bundled station list — try the English station name.`; renderLegs(); updateSaveEnabled(); return; }
-
-  const matches = [];
-  fromHits.forEach(fh=>{
-    const th = toHits.find(t=>t.line===fh.line);
-    if(th && th.idx !== fh.idx){
-      const stations = LINE_DATA[fh.line];
-      const lo = Math.min(fh.idx, th.idx), hi = Math.max(fh.idx, th.idx);
-      const slice = stations.slice(lo, hi+1).map(s=>[s.lat, s.lon]);
-      const oriented = fh.idx <= th.idx ? slice : slice.slice().reverse();
-      matches.push({ line: fh.line, color: colorForLine(fh.line), coords: oriented });
+  list.querySelectorAll('.pin-item').forEach(item => {
+    const id = item.getAttribute('data-pin-id');
+    const first = firstRects.get(id);
+    if(!first) return;
+    const last = item.getBoundingClientRect();
+    const deltaY = first.top - last.top;
+    if(Math.abs(deltaY) > 0.5){
+      item.style.transition = 'none';
+      item.style.transform = `translateY(${deltaY}px)`;
+      requestAnimationFrame(() => {
+        item.style.transition = 'transform .25s ease';
+        item.style.transform = '';
+      });
     }
   });
+}
 
-  if(matches.length===0){
-    leg.status = 'notfound';
-    leg.reason = `Found both stations, but no single bundled line stops at both "${leg.from}" and "${leg.to}" — they likely need a transfer. Try adding another leg for the connecting segment.`;
+function updateRouteFields(){
+  const fromEl = document.getElementById('from-label');
+  const toEl = document.getElementById('to-label');
+  const fromPin = findPinById(fromId);
+  const toPin = findPinById(toId);
+  fromEl.textContent = fromPin ? fromPin.name : 'Pick a pin below';
+  fromEl.classList.toggle('placeholder', !fromPin);
+  toEl.textContent = toPin ? toPin.name : 'Pick a pin below';
+  toEl.classList.toggle('placeholder', !toPin);
+
+  const statBox = document.getElementById('route-stat');
+  const modeToggle = document.getElementById('mode-toggle');
+
+  if(fromPin && toPin){
+    const km = haversineKm(fromPin, toPin);
+    document.getElementById('route-distance').textContent = km < 1 ? Math.round(km*1000) + ' m' : km.toFixed(1) + ' km';
+    statBox.classList.add('visible');
+    modeToggle.classList.add('visible');
+
+    if(!routeModeManual){
+      routeMode = km <= WALK_SUGGEST_KM ? 'walk' : 'transit';
+    }
+
+    const walkMinutes = Math.max(1, Math.round((km / WALK_SPEED_KMH) * 60));
+    document.getElementById('mode-walk-btn').textContent = `🚶 Walk · ~${walkMinutes} min`;
+    document.getElementById('mode-transit-btn').textContent = '🚊 Transit';
+    document.getElementById('mode-transit-btn').classList.toggle('active', routeMode === 'transit');
+    document.getElementById('mode-walk-btn').classList.toggle('active', routeMode === 'walk');
+
+    renderRouteLinks(fromPin, toPin);
+    updateConnectorLine(fromPin, toPin);
   } else {
-    matches.sort((a,b)=> a.coords.length - b.coords.length);
-    leg.line = matches[0].line; leg.color = matches[0].color; leg.coords = matches[0].coords;
-    leg.stopCount = matches[0].coords.length; leg.matches = matches; leg.approx = false; leg.status = 'found';
+    statBox.classList.remove('visible');
+    modeToggle.classList.remove('visible');
+    disableRouteLinks();
+    updateConnectorLine(null, null);
   }
-  renderLegs();
-  updateSaveEnabled();
 }
 
-routeSaveBtn.addEventListener('click', ()=>{
-  const fromP = pins.find(p=>p.id===routeFromId), toP = pins.find(p=>p.id===routeToId);
-  const resolvedLegs = currentLegs.map((leg,i)=>{
-    if(leg.status==='found'){
-      return { line: leg.line, color: leg.color, from: leg.from, to: leg.to, coords: leg.coords, approx:false };
-    }
-    const startPt = i===0 ? [fromP.lat,fromP.lng] : (currentLegs[i-1].coords && currentLegs[i-1].coords.length>1 ? currentLegs[i-1].coords[currentLegs[i-1].coords.length-1] : [fromP.lat,fromP.lng]);
-    const endPt = (i===currentLegs.length-1) ? [toP.lat,toP.lng] : startPt;
-    return { line: (leg.from||'?') + ' → ' + (leg.to||'?') + ' (unmatched)', color:'#999999', from: leg.from, to: leg.to, coords:[startPt,endPt], approx:true };
+let connectorLine = null;
+
+function updateConnectorLine(fromPin, toPin){
+  if(connectorLine){ connectorLine.setMap(null); connectorLine = null; }
+  if(!fromPin || !toPin || !map) return;
+  const amberColor = getComputedStyle(document.documentElement).getPropertyValue('--amber').trim() || '#e6b94d';
+  connectorLine = new google.maps.Polyline({
+    path: [{ lat: fromPin.lat, lng: fromPin.lng }, { lat: toPin.lat, lng: toPin.lng }],
+    geodesic: true,
+    strokeOpacity: 0,
+    icons: [{
+      icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.9, scale: 3, strokeColor: amberColor },
+      offset: '0',
+      repeat: '12px',
+    }],
+    map: map,
+    zIndex: 5,
   });
-  routes.push({ id:'r'+Date.now()+Math.random().toString(36).slice(2,6), fromId:routeFromId, toId:routeToId, legs:resolvedLegs });
-  routeModalOverlay.classList.remove('open');
-  saveData(); renderAll();
+}
+
+let lastRouteOrigin = null, lastRouteDestination = null, lastRouteTravelmode = 'transit';
+
+function renderRouteLinks(fromPin, toPin){
+  const gLink = document.getElementById('google-route-link');
+  const gLabel = document.getElementById('google-route-label');
+
+  const travelmode = routeMode === 'walk' ? 'walking' : 'transit';
+  gLink.href = `https://www.google.com/maps/dir/?api=1&origin=${fromPin.lat},${fromPin.lng}&destination=${toPin.lat},${toPin.lng}&travelmode=${travelmode}`;
+  gLink.removeAttribute('aria-disabled');
+  gLabel.textContent = routeMode === 'walk' ? 'Open walking route in Google Maps' : 'Open transit route in Google Maps';
+  lastRouteOrigin = { lat: fromPin.lat, lng: fromPin.lng };
+  lastRouteDestination = { lat: toPin.lat, lng: toPin.lng };
+  lastRouteTravelmode = travelmode;
+}
+
+/* ---------------- open the Google Maps app directly on mobile ----------------
+   Plain https://www.google.com/maps links are *supposed* to auto-open the
+   native app via Universal Links (iOS) / App Links (Android), but that only
+   fires when the OS/browser has that link-handling enabled, which many
+   phones don't have on by default. These schemes force it, with a web
+   fallback if the app isn't installed. */
+function isIOS(){
+  // iPadOS 13+ Safari reports a desktop "Macintosh" user agent by default —
+  // no "iPad" substring at all — which caused this check to misdetect
+  // iPads as desktop and skip straight to the plain web link. Multi-touch
+  // support is the reliable way to tell a real Mac apart from an iPad here.
+  if(/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) return true;
+  if(navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
+  return false;
+}
+function isAndroidDevice(){ return /Android/.test(navigator.userAgent); }
+
+// Opens a URL via a synthetic click on a real, temporary <a> element rather
+// than window.open()/location assignment — mobile Safari treats a genuine
+// anchor click far more consistently, both for custom-scheme app hand-offs
+// (comgooglemaps://, intent://) and for guaranteeing an actual new tab
+// rather than the current one being silently reused.
+function clickToOpen(url, newTab){
+  const a = document.createElement('a');
+  a.href = url;
+  if(newTab){ a.target = '_blank'; a.rel = 'noopener'; }
+  a.style.position = 'fixed';
+  a.style.opacity = '0';
+  a.style.pointerEvents = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => a.remove(), 0);
+}
+
+document.getElementById('google-route-link').addEventListener('click', (e) => {
+  if(!lastRouteOrigin || !lastRouteDestination) return;
+  const webUrl = e.currentTarget.href;
+  const originStr = `${lastRouteOrigin.lat},${lastRouteOrigin.lng}`;
+  const destStr = `${lastRouteDestination.lat},${lastRouteDestination.lng}`;
+
+  if(isAndroidDevice()){
+    e.preventDefault();
+    const intentUrl = `intent://maps/dir/?api=1&origin=${originStr}&destination=${destStr}&travelmode=${lastRouteTravelmode}` +
+      `#Intent;scheme=https;package=com.google.android.apps.maps;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+    // intent:// is a real navigable URL Chrome intercepts itself — safe to
+    // send straight to a new tab; this planner tab is untouched either way.
+    clickToOpen(intentUrl, true);
+  } else if(isIOS()){
+    e.preventDefault();
+    const mode = lastRouteTravelmode === 'walking' ? 'walking' : 'transit';
+    const iosUrl = `comgooglemaps://?saddr=${originStr}&daddr=${destStr}&directionsmode=${mode}`;
+    // Custom schemes aren't real page loads, so this doesn't open or
+    // navigate any tab — it's purely an OS-level app hand-off attempt.
+    clickToOpen(iosUrl, false);
+    // Only if the app didn't intercept it (we're still visible after the
+    // timeout) do we open the web fallback — and even then, in a fresh
+    // tab via the same synthetic-click technique, so this tab stays put.
+    setTimeout(() => {
+      if(!document.hidden) clickToOpen(webUrl, true);
+    }, 1200);
+  }
+  // Desktop: default <a target="_blank"> behavior opens a new tab already, so this tab is untouched.
 });
 
-// ---------------- Init ----------------
-loadData();
+function disableRouteLinks(){
+  const el = document.getElementById('google-route-link');
+  el.setAttribute('aria-disabled', 'true');
+  el.removeAttribute('href');
+  lastRouteOrigin = null;
+  lastRouteDestination = null;
+}
 
-})();
+document.getElementById('mode-transit-btn').addEventListener('click', () => {
+  routeMode = 'transit'; routeModeManual = true; updateRouteFields();
+});
+document.getElementById('mode-walk-btn').addEventListener('click', () => {
+  routeMode = 'walk'; routeModeManual = true; updateRouteFields();
+});
+
+/* ---------------- straight-line distance helper ---------------- */
+function haversineKm(a, b){
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI/180;
+  const dLng = (b.lng - a.lng) * Math.PI/180;
+  const lat1 = a.lat * Math.PI/180, lat2 = b.lat * Math.PI/180;
+  const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+
+/* ---------------- load the API key: build-injected, then saved, then manual ---------------- */
+async function proceedToKeyLoading(){
+  const injectedKey = window.__GOOGLE_MAPS_API_KEY__;
+  // Checking for the absence of "%%" (rather than equality against the
+  // literal placeholder) so this still works correctly after build.js does
+  // its string substitution — comparing against the placeholder text itself
+  // would have broken the moment that same text got replaced.
+  const isRealInjectedKey = injectedKey && injectedKey.indexOf('%%') === -1;
+
+  if(isRealInjectedKey){
+    // Deployed via Vercel with GOOGLE_MAPS_API_KEY set — skip the manual
+    // entry screen entirely. Still saved to storage so it's consistent
+    // with the rest of the app's key-handling if this ever changes.
+    await storeSet('gmaps-api-key', injectedKey);
+    loadGoogleMaps(injectedKey);
+    return;
+  }
+
+  const savedKey = await storeGet('gmaps-api-key');
+  if(savedKey){
+    document.getElementById('key-input').value = savedKey;
+    loadGoogleMaps(savedKey);
+  } else {
+    document.getElementById('setup').classList.remove('hidden');
+  }
+}
+
+/* ---------------- optional shared passcode gate ----------------
+   A casual speed bump for a small trip group, not real security — the
+   passcode ends up in the page's client-side source the same way the Maps
+   key does, so anyone determined enough could find it via view-source.
+   Good enough to keep it off search engines and random visitors; not a
+   substitute for actual authentication if that's ever needed. */
+const TRIP_PASSCODE_RAW = window.__TRIP_PASSCODE__;
+const isPasscodeConfigured = TRIP_PASSCODE_RAW && TRIP_PASSCODE_RAW.indexOf('%%') === -1;
+
+function checkPasscodeGate(){
+  let alreadyUnlocked = false;
+  try{ alreadyUnlocked = localStorage.getItem('trip-unlocked') === 'true'; }catch(err){}
+  if(!isPasscodeConfigured || alreadyUnlocked){
+    proceedToKeyLoading();
+    return;
+  }
+  document.getElementById('passcode-gate').classList.remove('hidden');
+  document.getElementById('passcode-input').focus();
+}
+
+function submitPasscode(){
+  const input = document.getElementById('passcode-input');
+  const errEl = document.getElementById('passcode-error');
+  if(input.value === TRIP_PASSCODE_RAW){
+    try{ localStorage.setItem('trip-unlocked', 'true'); }catch(err){}
+    document.getElementById('passcode-gate').classList.add('hidden');
+    proceedToKeyLoading();
+  } else {
+    errEl.textContent = 'Incorrect passcode — try again.';
+    errEl.style.display = 'block';
+    input.value = '';
+    input.focus();
+  }
+}
+document.getElementById('passcode-submit').addEventListener('click', submitPasscode);
+document.getElementById('passcode-input').addEventListener('keydown', e => { if(e.key === 'Enter') submitPasscode(); });
+
+checkPasscodeGate();
 </script>
 </body>
 </html>
